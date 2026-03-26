@@ -4,6 +4,12 @@
   "env": {
     "REACT_APP_API_URL": "@ceo_api_url"
   },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "git": {
     "deploymentEnabled": {
       "main": true
