@@ -31,8 +31,8 @@ from ai_services.autonomous_engine import AutonomousEngine
 
 # Import core system
 from core.routes import router as core_router
-from core.routes_v2 import router as core_router_v2
-from core.routes_v3 import router as core_router_v3
+# Note: routes_v2 and routes_v3 are deprecated with missing dependencies
+# Using routes.py and routes_v4_production.py instead
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1250,8 +1250,6 @@ async def health():
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(core_router, prefix="/api")
-app.include_router(core_router_v2, prefix="/api/v2")
-app.include_router(core_router_v3, prefix="/api/v3")
 
 # Configure CORS
 allowed_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
