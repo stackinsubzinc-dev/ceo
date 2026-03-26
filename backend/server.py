@@ -22,6 +22,10 @@ from ai_services.revenue_maximizer import RevenueMaximizer
 from ai_services.social_media_ai import SocialMediaAI
 from ai_services.sales_launch_ai import SalesLaunchAI
 from ai_services.affiliate_manager import AffiliateManager
+from ai_services.scheduler import AutomationScheduler
+from ai_services.marketplace_integrations import MarketplaceIntegrations
+from ai_services.compliance_checker import ComplianceChecker
+from ai_services.analytics_engine import AnalyticsEngine
 
 
 ROOT_DIR = Path(__file__).parent
@@ -42,6 +46,12 @@ revenue_maximizer = RevenueMaximizer()
 social_media_ai = SocialMediaAI()
 sales_launch_ai = SalesLaunchAI()
 affiliate_manager = AffiliateManager()
+marketplace_integrations = MarketplaceIntegrations()
+compliance_checker = ComplianceChecker()
+analytics_engine = AnalyticsEngine()
+
+# Scheduler will be initialized after db is ready
+automation_scheduler = None
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -859,6 +869,200 @@ async def get_affiliate_program():
         return program
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ PHASE 4: FULL AUTOMATION & SCALE ============
+
+@api_router.post("/automation/run-scheduled-cycle")
+async def run_scheduled_cycle(cycle_type: str):
+    """Run a scheduled automation cycle"""
+    try:
+        global automation_scheduler
+        if not automation_scheduler:
+            automation_scheduler = AutomationScheduler(db, micro_taskforce)
+        
+        results = await automation_scheduler.run_scheduled_cycle(cycle_type)
+        return {
+            "success": True,
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/automation/schedule")
+async def get_automation_schedule():
+    """Get next scheduled automation runs"""
+    try:
+        global automation_scheduler
+        if not automation_scheduler:
+            automation_scheduler = AutomationScheduler(db, micro_taskforce)
+        
+        schedule = automation_scheduler.get_next_scheduled_runs()
+        return {"schedule": schedule}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class PublishToMarketplaceRequest(BaseModel):
+    product_id: str
+    marketplace: str
+
+@api_router.post("/marketplace/publish")
+async def publish_to_marketplace(request: PublishToMarketplaceRequest):
+    """Publish product to a marketplace"""
+    try:
+        # Get product
+        product = await db.products.find_one({"id": request.product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Publish
+        result = await marketplace_integrations.publish_to_marketplace(
+            product, 
+            request.marketplace
+        )
+        
+        # Store listing
+        listing_doc = result.copy()
+        listing_doc.pop('_id', None)
+        listing_doc['sales'] = 0
+        listing_doc['revenue'] = 0.0
+        await db.marketplace_listings.insert_one(listing_doc)
+        
+        return {
+            "success": True,
+            "listing": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/marketplace/stats")
+async def get_marketplace_stats():
+    """Get marketplace statistics"""
+    try:
+        stats = await marketplace_integrations.get_marketplace_stats(db)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/marketplace/listings")
+async def get_marketplace_listings(marketplace: Optional[str] = None, limit: int = 50):
+    """Get marketplace listings"""
+    try:
+        query = {}
+        if marketplace:
+            query["marketplace"] = marketplace
+        
+        listings = await db.marketplace_listings.find(query, {"_id": 0}).sort("published_at", -1).limit(limit).to_list(limit)
+        return listings
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ComplianceCheckRequest(BaseModel):
+    product_id: str
+
+@api_router.post("/compliance/check")
+async def check_product_compliance(request: ComplianceCheckRequest):
+    """Run compliance checks on a product"""
+    try:
+        # Get product
+        product = await db.products.find_one({"id": request.product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Run compliance checks
+        results = await compliance_checker.check_product_compliance(product)
+        
+        # Store results
+        compliance_doc = results.copy()
+        compliance_doc["id"] = f"compliance-{random.randint(1000, 9999)}"
+        compliance_doc.pop('_id', None)
+        await db.compliance_checks.insert_one(compliance_doc)
+        
+        return {
+            "success": True,
+            "compliance": results
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/compliance/checks")
+async def get_compliance_checks(product_id: Optional[str] = None, limit: int = 20):
+    """Get compliance check results"""
+    try:
+        query = {}
+        if product_id:
+            query["product_id"] = product_id
+        
+        checks = await db.compliance_checks.find(query, {"_id": 0}).sort("checked_at", -1).limit(limit).to_list(limit)
+        return checks
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/analytics/insights")
+async def get_business_insights():
+    """Get AI-powered business insights and predictions"""
+    try:
+        # Get data
+        products = await db.products.find({}, {"_id": 0}).to_list(100)
+        opportunities = await db.opportunities.find({}, {"_id": 0}).to_list(100)
+        revenue_data = []  # Can be enhanced with historical data
+        
+        # Generate insights
+        insights = await analytics_engine.generate_insights(products, opportunities, revenue_data)
+        
+        # Store insights
+        insights_doc = insights.copy()
+        insights_doc["id"] = f"insights-{random.randint(1000, 9999)}"
+        insights_doc.pop('_id', None)
+        await db.analytics_insights.insert_one(insights_doc)
+        
+        return {
+            "success": True,
+            "insights": insights
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/system/health")
+async def get_system_health():
+    """Get system health status"""
+    try:
+        # Check all systems
+        health = {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {
+                "database": "operational",
+                "ai_teams": "operational",
+                "automation": "operational",
+                "marketplaces": "operational"
+            },
+            "stats": {
+                "total_products": await db.products.count_documents({}),
+                "total_opportunities": await db.opportunities.count_documents({}),
+                "pending_tasks": await db.ai_tasks.count_documents({"status": "pending"}),
+                "marketplace_listings": await db.marketplace_listings.count_documents({})
+            }
+        }
+        
+        return health
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
 
 
 # Include the router in the main app

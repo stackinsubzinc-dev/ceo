@@ -28,6 +28,10 @@ const Dashboard = () => {
   const [revenueRecs, setRevenueRecs] = useState(null);
   const [socialPosts, setSocialPosts] = useState([]);
   const [affiliateProgram, setAffiliateProgram] = useState(null);
+  const [insights, setInsights] = useState(null);
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [marketplaceStats, setMarketplaceStats] = useState(null);
+  const [automationSchedule, setAutomationSchedule] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -208,6 +212,52 @@ const Dashboard = () => {
     }
   };
 
+  const getAnalytics = async () => {
+    setAiRunning(true);
+    setAiMessage('📊 Generating AI-powered insights...');
+    
+    try {
+      const response = await axios.get(`${API}/analytics/insights`);
+      setInsights(response.data.insights);
+      setAiMessage('✅ Analytics complete!');
+      
+      setTimeout(() => {
+        setAiRunning(false);
+        setAiMessage('');
+        setActiveTab('automation');
+      }, 2000);
+    } catch (error) {
+      console.error("Error getting analytics:", error);
+      setAiMessage('❌ Error getting analytics');
+      setAiRunning(false);
+    }
+  };
+
+  const getSystemHealth = async () => {
+    try {
+      const response = await axios.get(`${API}/system/health`);
+      setSystemHealth(response.data);
+    } catch (error) {
+      console.error("Error getting system health:", error);
+    }
+  };
+
+  const getMarketplaceStats = async () => {
+    try {
+      const response = await axios.get(`${API}/marketplace/stats`);
+      setMarketplaceStats(response.data);
+    } catch (error) {
+      console.error("Error getting marketplace stats:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'automation') {
+      getSystemHealth();
+      getMarketplaceStats();
+    }
+  }, [activeTab]);
+
   const getStatusColor = (status) => {
     const colors = {
       draft: 'bg-gray-500',
@@ -338,6 +388,17 @@ const Dashboard = () => {
           >
             📈 Marketing & Revenue
           </button>
+          <button
+            onClick={() => setActiveTab('automation')}
+            className={`flex-1 px-4 py-2 rounded-lg transition-all ${
+              activeTab === 'automation' 
+                ? 'bg-purple-600 text-white' 
+                : 'text-gray-300 hover:bg-white/5'
+            }`}
+            data-testid="tab-automation"
+          >
+            🤖 Automation & Analytics
+          </button>
         </div>
       </div>
 
@@ -412,6 +473,17 @@ const Dashboard = () => {
           >
             <CheckCircle size={20} />
             Affiliate Program
+          </button>
+
+          {/* Analytics */}
+          <button
+            onClick={getAnalytics}
+            disabled={aiRunning}
+            className="bg-teal-600 hover:bg-teal-700 disabled:bg-gray-700 px-6 py-4 rounded-lg transition-all flex items-center gap-3 justify-center font-semibold"
+            data-testid="analytics-btn"
+          >
+            <Activity size={20} />
+            Get Analytics
           </button>
         </div>
 
@@ -804,6 +876,162 @@ const Dashboard = () => {
                   Create Affiliate Program
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Automation & Analytics Tab */}
+      {activeTab === 'automation' && (
+        <div className="space-y-6">
+          {/* System Health */}
+          {systemHealth && (
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                <Activity size={24} className="text-green-400" />
+                System Health
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Status</p>
+                  <p className="text-2xl font-bold text-green-400">{systemHealth.status}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Products</p>
+                  <p className="text-2xl font-bold">{systemHealth.stats.total_products}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Opportunities</p>
+                  <p className="text-2xl font-bold">{systemHealth.stats.total_opportunities}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Pending Tasks</p>
+                  <p className="text-2xl font-bold text-yellow-400">{systemHealth.stats.pending_tasks}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Analytics Insights */}
+          {insights && (
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                <TrendingUp size={24} className="text-blue-400" />
+                Business Insights & Predictions
+              </h2>
+              
+              {/* KPIs */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div className="bg-white/5 rounded-lg p-3">
+                  <p className="text-xs text-gray-400">Conversion Rate</p>
+                  <p className="text-xl font-bold text-green-400">{insights.kpis.conversion_rate}%</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-3">
+                  <p className="text-xs text-gray-400">Avg Order Value</p>
+                  <p className="text-xl font-bold text-purple-400">${insights.kpis.average_order_value}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-3">
+                  <p className="text-xs text-gray-400">Published</p>
+                  <p className="text-xl font-bold text-blue-400">{insights.kpis.products_published}/{insights.kpis.total_products}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-3">
+                  <p className="text-xs text-gray-400">Total Conversions</p>
+                  <p className="text-xl font-bold text-yellow-400">{insights.kpis.total_conversions}</p>
+                </div>
+              </div>
+
+              {/* Revenue Forecast */}
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-lg p-4 mb-6">
+                <h3 className="font-bold text-lg mb-3">📈 Revenue Forecast</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-400">Current Month</p>
+                    <p className="text-lg font-bold">${insights.revenue_forecast.current_month.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Next Month</p>
+                    <p className="text-lg font-bold text-green-400">${insights.revenue_forecast.next_month.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Next Quarter</p>
+                    <p className="text-lg font-bold text-blue-400">${insights.revenue_forecast.next_quarter.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400">Next Year</p>
+                    <p className="text-lg font-bold text-purple-400">${insights.revenue_forecast.next_year.toFixed(2)}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Growth Rate: {insights.revenue_forecast.growth_rate}% monthly</p>
+              </div>
+
+              {/* Recommendations */}
+              <div className="bg-white/5 rounded-lg p-4">
+                <h3 className="font-bold mb-2">🎯 AI Recommendations</h3>
+                <ul className="space-y-2">
+                  {insights.recommendations.map((rec, idx) => (
+                    <li key={idx} className="text-sm text-gray-300">{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Marketplace Stats */}
+          {marketplaceStats && (
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                <Package size={24} className="text-orange-400" />
+                Marketplace Integrations
+              </h2>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Total Listings</p>
+                  <p className="text-2xl font-bold">{marketplaceStats.total_listings}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Total Sales</p>
+                  <p className="text-2xl font-bold text-green-400">{marketplaceStats.total_sales}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Revenue</p>
+                  <p className="text-2xl font-bold text-purple-400">${marketplaceStats.total_revenue.toFixed(2)}</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-400">Marketplaces</p>
+                  <p className="text-2xl font-bold text-blue-400">{Object.keys(marketplaceStats.by_marketplace || {}).length}</p>
+                </div>
+              </div>
+
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                <p className="text-sm text-gray-400 mb-2">🛒 Supported Marketplaces:</p>
+                <div className="flex flex-wrap gap-2">
+                  {['Gumroad', 'Shopify', 'Amazon KDP', 'Etsy', 'Udemy'].map((marketplace, idx) => (
+                    <span key={idx} className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-xs">
+                      {marketplace}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-3">Mock integrations ready - upgrade with real API credentials</p>
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!insights && !systemHealth && !marketplaceStats && (
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-12 border border-white/20 text-center">
+              <Activity size={64} className="mx-auto mb-4 opacity-50" />
+              <h2 className="text-2xl font-bold mb-2">Automation & Analytics</h2>
+              <p className="text-gray-400 mb-6">
+                Get AI-powered insights, system health, and marketplace analytics
+              </p>
+              <button
+                onClick={getAnalytics}
+                className="bg-teal-600 hover:bg-teal-700 px-6 py-3 rounded-lg"
+              >
+                Generate Analytics
+              </button>
             </div>
           )}
         </div>
