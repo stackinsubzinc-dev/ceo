@@ -26,6 +26,8 @@ from ai_services.scheduler import AutomationScheduler
 from ai_services.marketplace_integrations import MarketplaceIntegrations
 from ai_services.compliance_checker import ComplianceChecker
 from ai_services.analytics_engine import AnalyticsEngine
+from ai_services.real_product_generator import RealProductGenerator
+from ai_services.autonomous_engine import AutonomousEngine
 
 
 ROOT_DIR = Path(__file__).parent
@@ -49,6 +51,10 @@ affiliate_manager = AffiliateManager()
 marketplace_integrations = MarketplaceIntegrations()
 compliance_checker = ComplianceChecker()
 analytics_engine = AnalyticsEngine()
+real_product_generator = RealProductGenerator()
+
+# Autonomous engine (initialized after db)
+autonomous_engine = None
 
 # Scheduler will be initialized after db is ready
 automation_scheduler = None
@@ -1063,6 +1069,157 @@ async def get_system_health():
             "status": "unhealthy",
             "error": str(e)
         }
+
+
+# ============ AUTONOMOUS ENGINE ============
+
+@api_router.post("/autonomous/run-cycle")
+async def run_autonomous_cycle():
+    """
+    Run ONE complete autonomous cycle:
+    Scout → Generate REAL product → Compliance → Publish → Market → Track
+    
+    Returns complete product with files and marketplace links
+    """
+    try:
+        global autonomous_engine
+        if not autonomous_engine:
+            autonomous_engine = AutonomousEngine(db)
+        
+        print("\n🚀 Starting autonomous product cycle...")
+        results = await autonomous_engine.run_autonomous_product_cycle()
+        
+        return {
+            "success": results["status"] == "success",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/autonomous/start-continuous")
+async def start_continuous_mode(products_per_day: int = 3, background_tasks: BackgroundTasks = None):
+    """
+    Start continuous autonomous mode - generates products 24/7
+    
+    Args:
+        products_per_day: How many products to generate daily (default: 3)
+    """
+    try:
+        global autonomous_engine
+        if not autonomous_engine:
+            autonomous_engine = AutonomousEngine(db)
+        
+        if autonomous_engine.running:
+            return {
+                "message": "Autonomous mode already running",
+                "status": "running"
+            }
+        
+        # Run in background
+        if background_tasks:
+            background_tasks.add_task(
+                autonomous_engine.continuous_autonomous_mode,
+                products_per_day=products_per_day
+            )
+        
+        return {
+            "success": True,
+            "message": f"Continuous autonomous mode started - {products_per_day} products/day",
+            "status": "running"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/autonomous/stop")
+async def stop_autonomous_mode():
+    """Stop continuous autonomous mode"""
+    try:
+        global autonomous_engine
+        if autonomous_engine and autonomous_engine.running:
+            autonomous_engine.stop()
+            return {
+                "success": True,
+                "message": "Autonomous mode stopped"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Autonomous mode was not running"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/autonomous/status")
+async def get_autonomous_status():
+    """Get status of autonomous engine"""
+    try:
+        global autonomous_engine
+        if not autonomous_engine:
+            return {
+                "running": False,
+                "status": "not_initialized"
+            }
+        
+        return {
+            "running": autonomous_engine.running,
+            "status": "running" if autonomous_engine.running else "stopped"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/generate-real")
+async def generate_real_product(niche: str, product_type: str = "ebook"):
+    """
+    Generate a REAL, complete product (not just metadata)
+    
+    Args:
+        niche: The niche/topic
+        product_type: ebook or course
+    """
+    try:
+        global real_product_generator
+        if not real_product_generator:
+            real_product_generator = RealProductGenerator()
+        
+        if product_type == "ebook":
+            product = await real_product_generator.generate_complete_ebook(
+                niche=niche,
+                keywords=[niche],
+                target_audience="general"
+            )
+        elif product_type == "course":
+            product = await real_product_generator.generate_complete_course(
+                topic=niche,
+                target_audience="beginners",
+                duration_hours=3
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Invalid product_type. Use 'ebook' or 'course'")
+        
+        # Export to file
+        file_path = await real_product_generator.export_to_file(product, format='json')
+        markdown_path = await real_product_generator.export_to_file(product, format='markdown')
+        
+        return {
+            "success": True,
+            "product": {
+                "title": product['title'],
+                "type": product['product_type'],
+                "quality_score": product['quality_score'],
+                "word_count": product['metadata'].get('word_count', 0),
+                "description": product['description']
+            },
+            "files": {
+                "json": file_path,
+                "markdown": markdown_path
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Include the router in the main app
