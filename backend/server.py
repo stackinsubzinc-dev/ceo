@@ -59,7 +59,7 @@ opportunity_scout = OpportunityScout()
 book_writer = BookWriter()
 course_creator = CourseCreator()
 product_generator = ProductGenerator()
-micro_taskforce = MicroTaskforce(db) if db else None
+micro_taskforce = MicroTaskforce(db) if db is not None else None
 revenue_maximizer = RevenueMaximizer()
 social_media_ai = SocialMediaAI()
 sales_launch_ai = SalesLaunchAI()
@@ -1066,7 +1066,7 @@ async def get_system_health():
             "status": "healthy",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {
-                "database": "connected" if db else "unavailable (demo mode)",
+                "database": "connected" if db is not None else "unavailable (demo mode)",
                 "ai_teams": "operational",
                 "automation": "operational",
                 "marketplaces": "operational"
@@ -1074,7 +1074,7 @@ async def get_system_health():
         }
         
         # Only count documents if database is available
-        if db:
+        if db is not None:
             health["stats"] = {
                 "total_products": await db.products.count_documents({}),
                 "total_opportunities": await db.opportunities.count_documents({}),
@@ -1255,7 +1255,7 @@ async def health():
         }
         
         # Test MongoDB connection if available
-        if db:
+        if db is not None:
             try:
                 await db.admin.command('ping')
                 response["database"] = "connected"
