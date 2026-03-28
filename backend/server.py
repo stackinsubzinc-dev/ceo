@@ -31,6 +31,8 @@ from ai_services.autonomous_engine import AutonomousEngine
 from ai_services.gumroad_publisher import GumroadPublisher
 from ai_services.key_vault import SecureKeyVault
 from ai_services.opportunity_hunter import OpportunityHunter, ProductDiscoveryEngine
+from ai_services.project_manager import ProjectFileManager, PublishingGuide
+from ai_services.ai_assistant import AIAssistant
 
 # Import core system
 from core.routes import router as core_router
@@ -75,6 +77,9 @@ gumroad_publisher = GumroadPublisher()
 key_vault = SecureKeyVault(db)
 opportunity_hunter = OpportunityHunter(db)
 product_discovery = ProductDiscoveryEngine(db)
+project_manager = ProjectFileManager(db)
+publishing_guide = PublishingGuide()
+ai_assistant = AIAssistant(db)
 
 # Autonomous engine (initialized after db)
 autonomous_engine = None
@@ -1773,6 +1778,138 @@ async def get_product_summary():
     """Get summary of all products across platforms"""
     try:
         return await product_discovery.get_product_summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ PROJECT FILE MANAGER ============
+
+@api_router.get("/projects")
+async def list_projects():
+    """List all projects"""
+    try:
+        projects = await project_manager.list_projects()
+        return {"success": True, "projects": projects}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}")
+async def get_project(project_id: str):
+    """Get a specific project with all files"""
+    try:
+        return await project_manager.get_project(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/projects/{project_id}/create")
+async def create_project_from_product(project_id: str):
+    """Create a project folder for a product"""
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        product = await db.products.find_one({"id": project_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        return await project_manager.create_project(product)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}/download")
+async def download_project(project_id: str):
+    """Download project as ZIP"""
+    try:
+        return await project_manager.download_project(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}/file")
+async def get_project_file(project_id: str, path: str):
+    """Get content of a specific file"""
+    try:
+        return await project_manager.get_file_content(project_id, path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    """Delete a project"""
+    try:
+        return await project_manager.delete_project(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ PUBLISHING GUIDE ============
+
+@api_router.get("/publishing/options/{product_type}")
+async def get_publishing_options(product_type: str):
+    """Get publishing options for a product type"""
+    try:
+        return publishing_guide.get_publishing_options(product_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/publishing/platforms")
+async def get_all_platforms():
+    """Get all publishing platforms"""
+    try:
+        return {"platforms": publishing_guide.get_all_platforms()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/publishing/guide/{platform_id}")
+async def get_platform_guide(platform_id: str):
+    """Get detailed guide for a platform"""
+    try:
+        return publishing_guide.get_platform_guide(platform_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ AI ASSISTANT ============
+
+@api_router.get("/assistant/status")
+async def get_assistant_status():
+    """Get comprehensive status update from AI assistant"""
+    try:
+        return await ai_assistant.get_status_update()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/assistant/publishing-guide/{product_id}")
+async def get_product_publishing_guide(product_id: str):
+    """Get publishing guide for a specific product"""
+    try:
+        return await ai_assistant.get_product_publishing_guide(product_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/assistant/notifications")
+async def get_notifications(unread_only: bool = False):
+    """Get user notifications"""
+    try:
+        notifications = await ai_assistant.get_notifications(unread_only)
+        return {"notifications": notifications}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/assistant/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str):
+    """Mark notification as read"""
+    try:
+        return await ai_assistant.mark_notification_read(notification_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/assistant/quick-stats")
+async def get_quick_stats():
+    """Get quick stats for assistant widget"""
+    try:
+        return await ai_assistant.get_quick_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

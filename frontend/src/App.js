@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import KeyVault from './components/KeyVault';
 import OpportunityHunter from './components/OpportunityHunter';
+import ProjectFiles from './components/ProjectFiles';
+import AIAssistant from './components/AIAssistant';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -43,6 +45,8 @@ const Dashboard = () => {
   const [launchType, setLaunchType] = useState('ebook');
   const [showKeyVault, setShowKeyVault] = useState(false);
   const [showOpportunityHunter, setShowOpportunityHunter] = useState(false);
+  const [showProjectFiles, setShowProjectFiles] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -508,27 +512,49 @@ const Dashboard = () => {
         </div>
 
         {/* Quick Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+          <button
+            onClick={() => setShowAIAssistant(true)}
+            className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 rounded-xl p-4 flex items-center gap-3 transition-all"
+            data-testid="open-assistant-btn"
+          >
+            <span className="text-2xl">🤖</span>
+            <div className="text-left">
+              <p className="font-bold">Atlas AI</p>
+              <p className="text-white/70 text-xs">Your assistant</p>
+            </div>
+          </button>
+          <button
+            onClick={() => setShowProjectFiles(true)}
+            className="bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 rounded-xl p-4 flex items-center gap-3 transition-all"
+            data-testid="open-files-btn"
+          >
+            <span className="text-2xl">📁</span>
+            <div className="text-left">
+              <p className="font-bold">Project Files</p>
+              <p className="text-white/70 text-xs">Download & manage</p>
+            </div>
+          </button>
           <button
             onClick={() => setShowKeyVault(true)}
-            className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 rounded-xl p-4 flex items-center gap-4 transition-all"
+            className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 rounded-xl p-4 flex items-center gap-3 transition-all"
             data-testid="open-key-vault-btn"
           >
-            <Key size={32} className="text-white" />
+            <span className="text-2xl">🔐</span>
             <div className="text-left">
-              <p className="font-bold text-lg">🔐 Key Vault</p>
-              <p className="text-white/70 text-sm">Store API keys & social credentials securely</p>
+              <p className="font-bold">Key Vault</p>
+              <p className="text-white/70 text-xs">112+ platforms</p>
             </div>
           </button>
           <button
             onClick={() => setShowOpportunityHunter(true)}
-            className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 rounded-xl p-4 flex items-center gap-4 transition-all"
+            className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 rounded-xl p-4 flex items-center gap-3 transition-all"
             data-testid="open-hunter-btn"
           >
-            <Target size={32} className="text-white" />
+            <span className="text-2xl">🎯</span>
             <div className="text-left">
-              <p className="font-bold text-lg">🎯 Opportunity Hunter</p>
-              <p className="text-white/70 text-sm">AI finds new income streams & creates agent teams</p>
+              <p className="font-bold">Opportunity Hunter</p>
+              <p className="text-white/70 text-xs">Find income streams</p>
             </div>
           </button>
         </div>
@@ -537,6 +563,17 @@ const Dashboard = () => {
       {/* Modals */}
       {showKeyVault && <KeyVault onClose={() => setShowKeyVault(false)} />}
       {showOpportunityHunter && <OpportunityHunter onClose={() => setShowOpportunityHunter(false)} />}
+      {showProjectFiles && <ProjectFiles onClose={() => setShowProjectFiles(false)} />}
+      {showAIAssistant && (
+        <AIAssistant 
+          onClose={() => setShowAIAssistant(false)} 
+          onAction={(action) => {
+            if (action === 'open_vault') setShowKeyVault(true);
+            if (action === 'open_hunter') setShowOpportunityHunter(true);
+            if (action === 'view_products') setActiveTab('overview');
+          }}
+        />
+      )}
 
       {/* AI Control Panel */}
       {aiMessage && (
