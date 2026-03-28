@@ -33,6 +33,7 @@ from ai_services.key_vault import SecureKeyVault
 from ai_services.opportunity_hunter import OpportunityHunter, ProductDiscoveryEngine
 from ai_services.project_manager import ProjectFileManager, PublishingGuide
 from ai_services.ai_assistant import AIAssistant
+from ai_services.team_engine import AgentTeamEngine
 
 # Import core system
 from core.routes import router as core_router
@@ -80,6 +81,7 @@ product_discovery = ProductDiscoveryEngine(db)
 project_manager = ProjectFileManager(db)
 publishing_guide = PublishingGuide()
 ai_assistant = AIAssistant(db)
+team_engine = AgentTeamEngine(db)
 
 # Autonomous engine (initialized after db)
 autonomous_engine = None
@@ -1912,6 +1914,174 @@ async def get_quick_stats():
         return await ai_assistant.get_quick_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ TEAM ENGINE ============
+
+@api_router.post("/teams/{team_id}/activate")
+async def activate_team(team_id: str):
+    """Activate a team and start working"""
+    try:
+        return await team_engine.activate_team(team_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/teams/{team_id}/status")
+async def get_team_status(team_id: str):
+    """Get detailed team status"""
+    try:
+        return await team_engine.get_team_status(team_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/teams/{team_id}/advance")
+async def advance_team(team_id: str):
+    """Advance team to next phase"""
+    try:
+        return await team_engine.advance_team(team_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/teams/summary")
+async def get_teams_summary():
+    """Get summary of all teams"""
+    try:
+        return await team_engine.get_all_teams_summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ APP DESCRIPTION ============
+
+@api_router.get("/app/description")
+async def get_app_description():
+    """Get full description of what this app does"""
+    return {
+        "name": "CEO AI Empire",
+        "tagline": "Your Autonomous AI Company That Builds, Launches & Sells Products 24/7",
+        "version": "3.0",
+        
+        "what_it_does": {
+            "summary": "CEO AI Empire is an autonomous system that uses AI agents to discover profitable opportunities, create digital products, publish them to marketplaces, and market them - all automatically.",
+            
+            "core_functions": [
+                {
+                    "name": "🎯 Opportunity Discovery",
+                    "description": "AI agents continuously scan the market to find trending niches, underserved markets, and profitable opportunities across 6 categories: Digital Products, Content Creation, SaaS Tools, Affiliate Marketing, Automated Services, and Community Building."
+                },
+                {
+                    "name": "📚 Product Creation",
+                    "description": "Generate complete digital products automatically - eBooks, online courses, templates, planners, and more. AI writes content, creates outlines, and prepares everything for publishing."
+                },
+                {
+                    "name": "🚀 One-Click Launch",
+                    "description": "Launch products with a single click. The system scouts opportunities, generates the product, prepares marketplace listings, creates marketing content, and sets up social media posts."
+                },
+                {
+                    "name": "👥 Agent Teams",
+                    "description": "Create specialized AI teams for each opportunity. Teams include Research, Content, Marketing, and Analytics agents that work together to execute the full product lifecycle."
+                },
+                {
+                    "name": "🛒 Multi-Platform Publishing",
+                    "description": "Publish to 112+ platforms including Gumroad, Amazon KDP, Etsy, Shopify, Teachable, and more. Automated publishing where APIs allow, step-by-step guides for manual platforms."
+                },
+                {
+                    "name": "📱 Social Media Automation",
+                    "description": "Generate and schedule posts across Twitter, Instagram, TikTok, YouTube, LinkedIn, Facebook, and Pinterest. Create YouTube Shorts scripts and full social campaigns."
+                },
+                {
+                    "name": "🔐 Secure Credential Vault",
+                    "description": "Safely store API keys and credentials for all platforms with AES-256 encryption. Connect once, automate forever."
+                },
+                {
+                    "name": "📁 Project File Management",
+                    "description": "Every product gets an organized project folder. Download as ZIP, view files, copy content - everything neatly organized."
+                },
+                {
+                    "name": "🤖 Atlas AI Assistant",
+                    "description": "Personal AI assistant that keeps you updated on everything - alerts, recommendations, publishing guides, and status updates."
+                },
+                {
+                    "name": "📊 Analytics & Revenue Tracking",
+                    "description": "Track sales, conversions, revenue across all platforms. AI analyzes data and provides optimization recommendations."
+                }
+            ]
+        },
+        
+        "how_it_works": {
+            "step_1": {
+                "title": "Discover Opportunities",
+                "description": "Click 'Hunt Now' in Opportunity Hunter. AI scans 24 trending niches across 6 categories and returns the top opportunities with trend scores, competition levels, and revenue estimates."
+            },
+            "step_2": {
+                "title": "Create Agent Team",
+                "description": "Click 'Create Team' on any opportunity. A specialized team of 6-8 AI agents is assigned: Research Agent, Content Agent, Marketing Agent, Analytics Agent, plus category-specific agents."
+            },
+            "step_3": {
+                "title": "Team Executes Work",
+                "description": "The team works through phases: Research → Creation → Production → Launch → Promotion. Each agent completes tasks and produces outputs."
+            },
+            "step_4": {
+                "title": "Launch Product",
+                "description": "Use One-Click Launch or manual controls. The system generates the complete product, prepares listings, and creates marketing materials."
+            },
+            "step_5": {
+                "title": "Publish Everywhere",
+                "description": "Atlas tells you which platforms can be automated vs manual. For automated platforms, AI handles posting. For manual, you get step-by-step instructions with direct links."
+            },
+            "step_6": {
+                "title": "Track & Optimize",
+                "description": "Monitor sales and engagement across all platforms. AI provides revenue optimization recommendations and identifies what's working."
+            }
+        },
+        
+        "platforms_supported": {
+            "total": 112,
+            "categories": {
+                "marketplaces": ["Gumroad", "Amazon KDP", "Etsy", "Shopify", "Teachable", "Udemy", "Payhip", "Ko-fi"],
+                "social_media": ["Twitter/X", "Instagram", "TikTok", "YouTube", "LinkedIn", "Facebook", "Pinterest", "Reddit"],
+                "email": ["Mailchimp", "ConvertKit", "SendGrid", "Beehiiv", "Substack"],
+                "community": ["Discord", "Slack", "Telegram", "Circle", "Skool"],
+                "payments": ["Stripe", "PayPal", "Lemon Squeezy", "Paddle"],
+                "advertising": ["Google Ads", "Facebook Ads", "TikTok Ads"],
+                "analytics": ["Google Analytics", "Mixpanel", "Amplitude"],
+                "and_more": "100+ total platforms across all categories"
+            }
+        },
+        
+        "agent_team_roles": {
+            "core_agents": [
+                {"name": "Research Agent", "role": "Market research, competitor analysis, trend identification"},
+                {"name": "Content Agent", "role": "Writing, content creation, copywriting"},
+                {"name": "Marketing Agent", "role": "Campaign strategy, ad copy, social media"},
+                {"name": "Analytics Agent", "role": "Data analysis, performance tracking, optimization"}
+            ],
+            "specialized_agents": [
+                {"name": "Product Designer", "role": "Visual design, covers, graphics"},
+                {"name": "Video Editor", "role": "Video content, YouTube, TikTok"},
+                {"name": "SEO Agent", "role": "Search optimization, keywords"},
+                {"name": "Community Manager", "role": "Engagement, member management"},
+                {"name": "Developer Agent", "role": "Technical implementation (for SaaS)"}
+            ]
+        },
+        
+        "revenue_potential": {
+            "digital_products": "$100 - $5,000/month per product",
+            "courses": "$500 - $10,000/month",
+            "saas_tools": "$1,000 - $50,000/month",
+            "affiliate": "$200 - $5,000/month",
+            "community": "$500 - $20,000/month (recurring)"
+        },
+        
+        "getting_started": [
+            "1. Click 'Opportunity Hunter' and hunt for opportunities",
+            "2. Review opportunities and click 'Create Team' on the best ones",
+            "3. Watch your teams work in the Teams tab",
+            "4. Use 'Launch Product' to create and publish products",
+            "5. Add credentials in 'Key Vault' for automated publishing",
+            "6. Check 'Atlas AI' for updates and recommendations"
+        ]
+    }
 
 
 # Health check endpoint
