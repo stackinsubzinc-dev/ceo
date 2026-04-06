@@ -7,10 +7,7 @@ services:
     dockerfile: ./Dockerfile
     region: oregon
     envVars:
-      # Core
-      - key: MONGO_URL
-        scope: run
-        value: mongodb+srv://stackinsubzinc_db_user:FiiLLTHY.ai@cluster1.srgqzg.mongodb.net/ceo_ai?retryWrites=true&w=majority
+      # Core - MONGO_URL must be set manually in Render dashboard
       - key: DB_NAME
         scope: run
         value: ceo_ai
