@@ -10,10 +10,10 @@ services:
       # Core
       - key: MONGO_URL
         scope: run
-        value: ${MONGO_URL}
+        value: mongodb://atlas-sql-69c78f411fed5a34367cded3-srgqzg.z.query.mongodb.net/ceo_ai?ssl=true&authSource=admin
       - key: DB_NAME
         scope: run
-        value: ${DB_NAME}
+        value: ceo_ai
       - key: ENVIRONMENT
         scope: run
         value: production
