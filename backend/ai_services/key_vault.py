@@ -847,6 +847,8 @@ class SecureKeyVault:
     def _get_or_create_key(self) -> bytes:
         """Get or create encryption key"""
         key_path = Path("/app/backend/.vault_key")
+        # Ensure parent directory exists
+        key_path.parent.mkdir(parents=True, exist_ok=True)
         if key_path.exists():
             return key_path.read_bytes()
         else:
