@@ -3255,27 +3255,6 @@ async def get_all_payment_stats():
             "today_sales": 0,
             "error": str(e)
         }
-                "completed_at": {"$gte": today_start.isoformat()}
-            },
-            {"_id": 0}
-        ).to_list(None)
-        
-        today_revenue = sum(p['amount_cents'] for p in today_payments) / 100 if today_payments else 0
-        today_sales = len(today_payments)
-        
-        return {
-            "total_revenue": total_revenue,
-            "total_sales": total_sales,
-            "products_with_sales": products_with_sales,
-            "average_order_value": total_revenue / total_sales if total_sales > 0 else 0,
-            "today_revenue": today_revenue,
-            "today_sales": today_sales,
-            "payment_records_count": len(all_payments),
-            "currency": "usd"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting payment stats: {str(e)}")
 
 
 # Include the router in the main app
