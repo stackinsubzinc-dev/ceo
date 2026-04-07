@@ -4,29 +4,29 @@
    ============================================================================ */
 
 :root {
-  /* Light Mode Colors */
-  --color-primary: #8b5cf6;
-  --color-primary-dark: #7c3aed;
-  --color-primary-light: #a78bfa;
+  /* Dark Hologram Colors */
+  --color-primary: #00ffff;
+  --color-primary-dark: #00ccff;
+  --color-primary-light: #00ffff;
   
-  --color-secondary: #ec4899;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #3b82f6;
+  --color-secondary: #ff00ff;
+  --color-success: #00ff88;
+  --color-warning: #ffcc00;
+  --color-error: #ff0055;
+  --color-info: #00aaff;
   
-  --color-bg: #f9fafb;
-  --color-bg-secondary: #ffffff;
-  --color-bg-tertiary: #f3f4f6;
+  --color-bg: #0a0e27;
+  --color-bg-secondary: #151b3a;
+  --color-bg-tertiary: #1f2844;
   
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-tertiary: #9ca3af;
+  --color-text-primary: #e0f7ff;
+  --color-text-secondary: #a0d5ff;
+  --color-text-tertiary: #7fa5ff;
   
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
+  --color-border: #00ffff;
+  --color-border-light: #00ccff;
   
-  --color-shadow: rgba(0, 0, 0, 0.1);
+  --color-shadow: rgba(0, 255, 255, 0.1);
   
   /* Spacing */
   --spacing-xs: 0.25rem;
@@ -65,22 +65,22 @@
 }
 
 [data-theme="dark"] {
-  --color-bg: #0f172a;
-  --color-bg-secondary: #1e293b;
-  --color-bg-tertiary: #334155;
+  --color-bg: #0a0e27;
+  --color-bg-secondary: #151b3a;
+  --color-bg-tertiary: #1f2844;
   
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #cbd5e1;
-  --color-text-tertiary: #94a3b8;
+  --color-text-primary: #e0f7ff;
+  --color-text-secondary: #a0d5ff;
+  --color-text-tertiary: #7fa5ff;
   
-  --color-border: #334155;
-  --color-border-light: #1e293b;
+  --color-border: #00ffff;
+  --color-border-light: #00ccff;
   
-  --color-shadow: rgba(0, 0, 0, 0.3);
+  --color-shadow: rgba(0, 255, 255, 0.1);
 }
 
 /* ============================================================================
-   Global Styles
+   Global Styles - Dark Hologram Theme
    ============================================================================ */
 
 * {
@@ -96,15 +96,33 @@ html, body, #root {
 
 body {
   font-family: var(--font-family-base);
-  background-color: var(--color-bg);
+  background: linear-gradient(135deg, #0a0e27 0%, #151b3a 50%, #0a0e27 100%);
+  background-attachment: fixed;
   color: var(--color-text-primary);
-  transition: background-color var(--transition-normal);
+  transition: all var(--transition-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Add hologram background effect */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(ellipse at 20% 50%, rgba(0, 255, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 50%, rgba(255, 0, 255, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ============================================================================
-   Buttons
+   Buttons - Hologram Glow
    ============================================================================ */
 
 button {
@@ -113,11 +131,11 @@ button {
   border: none;
   outline: none;
   transition: all var(--transition-fast);
+  position: relative;
+  z-index: 1;
 }
 
-.btn-primary {
-  background-color: var(--color-primary);
-  color: white;
+.btn {
   padding: var(--spacing-sm) var(--spacing-lg);
   border-radius: var(--radius-md);
   font-weight: 600;
@@ -125,29 +143,55 @@ button {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #000;
+  border: 1px solid var(--color-primary);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.1);
+  text-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
   background-color: var(--color-primary-dark);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.8), inset 0 0 15px rgba(0, 255, 255, 0.2);
   transform: translateY(-2px);
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.6);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  box-shadow: 0 0 5px rgba(0, 255, 255, 0.2);
 }
 
 .btn-secondary {
   background-color: var(--color-bg-tertiary);
   color: var(--color-text-primary);
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
+  border: 1px solid var(--color-secondary);
+  box-shadow: 0 0 10px rgba(255, 0, 255, 0.3);
 }
 
 .btn-secondary:hover {
-  background-color: var(--color-border);
+  background-color: rgba(255, 0, 255, 0.1);
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.6);
+  border-color: var(--color-secondary);
+}
+
+.btn-success {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.btn-success:hover {
+  background-color: rgba(0, 255, 136, 0.05);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+}
 }
 
 .btn-icon {

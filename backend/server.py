@@ -584,6 +584,15 @@ async def generate_full_product(request: FullProductGenerationRequest):
 async def get_dashboard_stats():
     """Get overall dashboard statistics"""
     try:
+        if not db:
+            return DashboardStats(
+                total_products=0,
+                products_today=0,
+                total_revenue=0.0,
+                revenue_today=0.0,
+                pending_tasks=0,
+                active_opportunities=0
+            )
         # Count products
         total_products = await db.products.count_documents({})
         
@@ -3181,33 +3190,71 @@ async def get_product_payment_stats(product_id: str):
 
 @api_router.get("/payments/all-stats")
 async def get_all_payment_stats():
-    """Get overall payment statistics"""
+    \"\"\"Get overall payment statistics\"\"\"
     try:
         if not db:
             return {
                 "total_revenue": 0,
                 "total_sales": 0,
                 "products_with_sales": 0,
-                "average_order_value": 0
+                "average_order_value": 0,
+                "today_revenue": 0,
+                "today_sales": 0
             }
         
-        # Get all successful payments
-        all_payments = await db.payments.find(
-            {"status": "succeeded"},
-            {"_id": 0}
-        ).to_list(None)
+        try:
+            # Get all successful payments
+            all_payments = await db.payments.find(
+                {"status": "succeeded"},
+                {"_id": 0}
+            ).to_list(None)
+        except:
+            all_payments = []
         
-        total_revenue = sum(p['amount_cents'] for p in all_payments) / 100 if all_payments else 0
+        total_revenue = sum(p.get('amount_cents', 0) for p in all_payments) / 100 if all_payments else 0
         total_sales = len(all_payments)
         
         # Get unique products with sales
-        products_with_sales = len(set(p['product_id'] for p in all_payments))
+        products_with_sales = len(set(p.get('product_id') for p in all_payments if p.get('product_id')))
+        
+        # Average order value
+        average_order_value = total_revenue / total_sales if total_sales > 0 else 0
         
         # Today's stats
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_payments = await db.payments.find(
-            {
-                "status": "succeeded",
+        try:
+            today_payments = await db.payments.find(
+                {
+                    "status": "succeeded",
+                    "created_at": {"$gte": today_start.isoformat()}
+                },
+                {"_id": 0}
+            ).to_list(None)
+        except:
+            today_payments = []
+        
+        today_revenue = sum(p.get('amount_cents', 0) for p in today_payments) / 100 if today_payments else 0
+        today_sales = len(today_payments)
+        
+        return {
+            "total_revenue": round(total_revenue, 2),
+            "total_sales": total_sales,
+            "products_with_sales": products_with_sales,
+            "average_order_value": round(average_order_value, 2),
+            "today_revenue": round(today_revenue, 2),
+            "today_sales": today_sales
+        }
+    except Exception as e:
+        print(f"Error in get_all_payment_stats: {str(e)}")
+        return {
+            "total_revenue": 0,
+            "total_sales": 0,
+            "products_with_sales": 0,
+            "average_order_value": 0,
+            "today_revenue": 0,
+            "today_sales": 0,
+            "error": str(e)
+        }
                 "completed_at": {"$gte": today_start.isoformat()}
             },
             {"_id": 0}
