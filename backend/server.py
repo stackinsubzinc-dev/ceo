@@ -2725,6 +2725,287 @@ async def send_product_notification(product_id: str, to_email: str):
         raise HTTPException(status_code=500, detail=f"Error sending product notification: {str(e)}")
 
 
+# ==================== Payment Processing (Stripe) ====================
+
+class StripeProduct(BaseModel):
+    product_id: str
+    price_cents: int = Field(..., description="Price in cents (e.g., 2999 for $29.99)")
+    currency: str = Field(default="usd", description="Currency code")
+    quantity_available: Optional[int] = Field(default=None, description="Unlimited if None")
+
+class StripeCheckoutRequest(BaseModel):
+    product_id: str
+    customer_email: str
+    success_url: str = "http://localhost:3000/success"
+    cancel_url: str = "http://localhost:3000/cancel"
+    quantity: int = 1
+
+class StripeCheckoutResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+    payment_status: str
+
+class StripeWebhookEvent(BaseModel):
+    event_type: str
+    session_id: Optional[str] = None
+    payment_intent_id: Optional[str] = None
+    data: Dict[str, Any]
+
+class PaymentRecord(BaseModel):
+    payment_id: str
+    product_id: str
+    customer_email: str
+    amount_cents: int
+    currency: str
+    status: str  # succeeded, pending, failed
+    payment_intent_id: str
+    created_at: str
+
+
+@api_router.post("/payments/create-checkout", response_model=StripeCheckoutResponse)
+async def create_stripe_checkout(request: StripeCheckoutRequest):
+    """Create a Stripe checkout session"""
+    try:
+        stripe_key = keys_manager.get_key('stripe_key')
+        if not stripe_key:
+            raise HTTPException(status_code=400, detail="Stripe API key not configured")
+        
+        # Import Stripe
+        try:
+            import stripe
+        except ImportError:
+            raise HTTPException(status_code=500, detail="Stripe SDK not installed. Run: pip install stripe")
+        
+        # Initialize Stripe
+        stripe.api_key = stripe_key
+        
+        # Get product details
+        if not db:
+            raise HTTPException(status_code=400, detail="Database not available")
+        
+        product = await db.products.find_one({"id": request.product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Get price from product or use default
+        price_cents = int(product.get("price", 29.99) * 100)
+        
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[
+                {
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': product['title'],
+                            'description': product['description'][:500],  # Limit description
+                            'images': [product['image_url']] if product.get('image_url') else [],
+                        },
+                        'unit_amount': price_cents,
+                    },
+                    'quantity': request.quantity,
+                }
+            ],
+            mode='payment',
+            customer_email=request.customer_email,
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            metadata={
+                'product_id': request.product_id,
+                'customer_email': request.customer_email
+            }
+        )
+        
+        # Store payment record
+        payment_record = {
+            "payment_id": str(uuid.uuid4()),
+            "product_id": request.product_id,
+            "customer_email": request.customer_email,
+            "amount_cents": price_cents * request.quantity,
+            "currency": "usd",
+            "status": "pending",
+            "payment_intent_id": checkout_session.payment_intent,
+            "stripe_session_id": checkout_session.id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.payments.insert_one(payment_record)
+        
+        return StripeCheckoutResponse(
+            checkout_url=checkout_session.url,
+            session_id=checkout_session.id,
+            payment_status="pending"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating checkout: {str(e)}")
+
+
+@api_router.post("/payments/webhook")
+async def handle_stripe_webhook(request: dict):
+    """Handle Stripe webhook events"""
+    try:
+        stripe_key = keys_manager.get_key('stripe_key')
+        if not stripe_key:
+            raise HTTPException(status_code=400, detail="Stripe API key not configured")
+        
+        event_type = request.get('type')
+        
+        # Handle checkout.session.completed event
+        if event_type == 'checkout.session.completed':
+            session_id = request.get('data', {}).get('object', {}).get('id')
+            payment_intent_id = request.get('data', {}).get('object', {}).get('payment_intent')
+            customer_email = request.get('data', {}).get('object', {}).get('customer_email')
+            metadata = request.get('data', {}).get('object', {}).get('metadata', {})
+            
+            # Update payment record
+            if db:
+                await db.payments.update_one(
+                    {"stripe_session_id": session_id},
+                    {
+                        "$set": {
+                            "status": "succeeded",
+                            "completed_at": datetime.now(timezone.utc).isoformat()
+                        }
+                    }
+                )
+                
+                # Update product stats
+                product_id = metadata.get('product_id')
+                if product_id:
+                    await db.products.update_one(
+                        {"id": product_id},
+                        {
+                            "$inc": {
+                                "conversions": 1,
+                                "revenue": float(
+                                    request.get('data', {}).get('object', {}).get('amount_total', 0)
+                                ) / 100
+                            }
+                        }
+                    )
+                
+                # Send confirmation email
+                try:
+                    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+                    if product:
+                        email_request = EmailRequest(
+                            to_email=customer_email,
+                            subject=f"✅ Order Confirmation: {product['title']}",
+                            body=f"""
+                                <h1>Thank You for Your Purchase!</h1>
+                                <p>Order confirmation for <strong>{product['title']}</strong></p>
+                                <p>You should receive an email with download/access link shortly.</p>
+                            """,
+                            template_type="general"
+                        )
+                        await send_email(email_request)
+                except Exception as e:
+                    print(f"Warning: Failed to send confirmation email: {e}")
+        
+        return {"status": "received"}
+        
+    except Exception as e:
+        print(f"Webhook handling error: {e}")
+        raise HTTPException(status_code=500, detail=f"Webhook error: {str(e)}")
+
+
+@api_router.get("/payments/{product_id}/stats")
+async def get_product_payment_stats(product_id: str):
+    """Get payment statistics for a product"""
+    try:
+        if not db:
+            raise HTTPException(status_code=400, detail="Database not available")
+        
+        # Get product
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Get payment records for this product
+        payments = await db.payments.find(
+            {
+                "product_id": product_id,
+                "status": "succeeded"
+            },
+            {"_id": 0}
+        ).to_list(None)
+        
+        # Calculate stats
+        total_revenue = sum(p['amount_cents'] for p in payments) / 100
+        total_sales = len(payments)
+        
+        return {
+            "product_id": product_id,
+            "product_title": product['title'],
+            "total_sales": total_sales,
+            "total_revenue": total_revenue,
+            "average_sale": total_revenue / total_sales if total_sales > 0 else 0,
+            "payment_records": payments,
+            "currency": "usd"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting payment stats: {str(e)}")
+
+
+@api_router.get("/payments/all-stats")
+async def get_all_payment_stats():
+    """Get overall payment statistics"""
+    try:
+        if not db:
+            return {
+                "total_revenue": 0,
+                "total_sales": 0,
+                "products_with_sales": 0,
+                "average_order_value": 0
+            }
+        
+        # Get all successful payments
+        all_payments = await db.payments.find(
+            {"status": "succeeded"},
+            {"_id": 0}
+        ).to_list(None)
+        
+        total_revenue = sum(p['amount_cents'] for p in all_payments) / 100 if all_payments else 0
+        total_sales = len(all_payments)
+        
+        # Get unique products with sales
+        products_with_sales = len(set(p['product_id'] for p in all_payments))
+        
+        # Today's stats
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_payments = await db.payments.find(
+            {
+                "status": "succeeded",
+                "completed_at": {"$gte": today_start.isoformat()}
+            },
+            {"_id": 0}
+        ).to_list(None)
+        
+        today_revenue = sum(p['amount_cents'] for p in today_payments) / 100 if today_payments else 0
+        today_sales = len(today_payments)
+        
+        return {
+            "total_revenue": total_revenue,
+            "total_sales": total_sales,
+            "products_with_sales": products_with_sales,
+            "average_order_value": total_revenue / total_sales if total_sales > 0 else 0,
+            "today_revenue": today_revenue,
+            "today_sales": today_sales,
+            "payment_records_count": len(all_payments),
+            "currency": "usd"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting payment stats: {str(e)}")
+
+
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(core_router, prefix="/api")
