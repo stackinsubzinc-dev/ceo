@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, BarChart3, Zap, AlertCircle, RefreshCw } from 'lucide-react';
 import './Pages.css';
 
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
 const Dashboard = () => {
   const [dashboardStats, setDashboardStats] = useState(null);
   const [paymentStats, setPaymentStats] = useState(null);
@@ -20,8 +22,8 @@ const Dashboard = () => {
     setError(null);
     try {
       const [dashResponse, paymentResponse] = await Promise.all([
-        fetch('http://localhost:8000/api/dashboard/stats'),
-        fetch('http://localhost:8000/api/payments/all-stats')
+        fetch(`${API}/api/dashboard/stats`),
+        fetch(`${API}/api/payments/all-stats`)
       ]);
 
       if (dashResponse.ok) {

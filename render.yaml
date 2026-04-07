@@ -69,7 +69,7 @@ services:
       # CORS & Security
       - key: CORS_ORIGINS
         scope: run
-        value: ${REACT_APP_FRONTEND_URL}
+        value: "https://frontend-one-ashen-16.vercel.app,http://localhost:3000,http://localhost:3002"
         
     healthCheckPath: /health
 

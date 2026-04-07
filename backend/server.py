@@ -3283,9 +3283,16 @@ app.include_router(api_router)
 app.include_router(core_router, prefix="/api")
 
 # Configure CORS
-allowed_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
+_cors_env = os.environ.get('CORS_ORIGINS', '')
+allowed_origins = [o.strip() for o in _cors_env.split(',') if o.strip()] if _cors_env else []
+# Always allow localhost dev and Vercel deployments
+_defaults = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002',
+             'https://frontend-one-ashen-16.vercel.app']
+for _o in _defaults:
+    if _o not in allowed_origins:
+        allowed_origins.append(_o)
 if os.environ.get('ENVIRONMENT') != 'production':
-    allowed_origins.append('*')
+    allowed_origins = ['*']
 
 app.add_middleware(
     CORSMiddleware,

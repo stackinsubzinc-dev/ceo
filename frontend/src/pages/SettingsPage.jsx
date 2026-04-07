@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 import { Eye, EyeOff, Copy, Check, Trash2, Plus, X } from 'lucide-react';
 import './Pages.css';
 
@@ -139,7 +141,7 @@ const SettingsPage = () => {
         if (apiKey.name.toLowerCase().includes('mongodb')) keysToSend.mongodb_url = apiKey.key;
       });
 
-      const response = await fetch('http://localhost:8000/api/keys/store', {
+      const response = await fetch(`${API}/api/keys/store`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

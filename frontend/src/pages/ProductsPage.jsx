@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 import { Package, Clock, TrendingUp, Zap, Image, Loader, Check, X } from 'lucide-react';
 import './Pages.css';
 
@@ -23,7 +25,7 @@ const ProductsPage = () => {
   const loadProductsFromBackend = async () => {
     setFetchingProducts(true);
     try {
-      const response = await fetch('http://localhost:8000/api/products');
+      const response = await fetch(`${API}/api/products`);
       if (response.ok) {
         const data = await response.json();
         setProducts(data);
@@ -48,7 +50,7 @@ const ProductsPage = () => {
 
       const keywordArray = keywords.split(',').map(k => k.trim()).filter(k => k);
 
-      const response = await fetch('http://localhost:8000/api/ai/generate-full-product', {
+      const response = await fetch(`${API}/api/ai/generate-full-product`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,7 +96,7 @@ const ProductsPage = () => {
 
     setCheckoutLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/payments/create-checkout', {
+      const response = await fetch(`${API}/api/payments/create-checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 import { Loader, AlertCircle, Check, Plus, Trash2, Share2, Calendar, TrendingUp } from 'lucide-react';
 import './Pages.css';
 
@@ -28,7 +30,7 @@ export default function SocialMediaPage() {
 
   const loadProducts = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/products?limit=100');
+      const response = await fetch(`${API}/api/products?limit=100`);
       const data = await response.json();
       setProducts(data || []);
     } catch (err) {
@@ -38,7 +40,7 @@ export default function SocialMediaPage() {
 
   const loadAnalytics = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/analytics/realtime');
+      const response = await fetch(`${API}/api/analytics/realtime`);
       const data = await response.json();
       setAnalytics(data);
     } catch (err) {
@@ -59,7 +61,7 @@ export default function SocialMediaPage() {
 
     try {
       // Generate posts for all selected platforms
-      const response = await fetch('http://localhost:8000/api/social/campaign', {
+      const response = await fetch(`${API}/api/social/campaign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -96,7 +98,7 @@ export default function SocialMediaPage() {
     setSuccess('');
 
     try {
-      const response = await fetch('http://localhost:8000/api/social/youtube-shorts', {
+      const response = await fetch(`${API}/api/social/youtube-shorts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,7 +135,7 @@ export default function SocialMediaPage() {
       const now = new Date();
       const responses = await Promise.all(
         Object.entries(postsGenerated).map(([platform, posts]) =>
-          fetch(`http://localhost:8000/api/social/schedule`, {
+          fetch(`${API}/api/social/schedule`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
