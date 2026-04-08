@@ -1,333 +1,389 @@
-import React, { useState } from 'react';
-import { Zap, TrendingUp, Lightbulb } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Lightbulb, RefreshCw, TrendingUp, Zap } from 'lucide-react';
 import './Pages.css';
 
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const normalizeTrendScore = (value) => {
+  const numericValue = Number(value || 0);
+  return numericValue <= 1 ? numericValue * 100 : numericValue;
+};
+
+const titleCase = (value) =>
+  String(value || 'unknown')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+
 const GrowthPage = () => {
-  const [experiments] = useState([
-    {
-      id: 1,
-      name: 'Price Point A/B Test',
-      status: 'running',
-      duration: '7 days',
-      daysLeft: '3 days',
-      control: '$47',
-      variant: '$67',
-      improvement: '+23%'
-    },
-    {
-      id: 2,
-      name: 'Email Subject Line Test',
-      status: 'running',
-      duration: '14 days',
-      daysLeft: '8 days',
-      control: '45% open rate',
-      variant: '52% open rate',
-      improvement: '+15%'
-    },
-    {
-      id: 3,
-      name: 'Landing Page Copy Test',
-      status: 'completed',
-      duration: '10 days',
-      daysLeft: 'Complete',
-      control: '2.1% conversion',
-      variant: '3.4% conversion',
-      improvement: '+62%'
-    },
-    {
-      id: 4,
-      name: 'Bonus Offer Test',
-      status: 'running',
-      duration: '5 days',
-      daysLeft: '2 days',
-      control: 'No bonus',
-      variant: '5 bonuses',
-      improvement: '+41%'
-    }
-  ]);
+  const [products, setProducts] = useState([]);
+  const [opportunities, setOpportunities] = useState([]);
+  const [paymentStats, setPaymentStats] = useState(null);
+  const [revenueBreakdown, setRevenueBreakdown] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const growthStrategies = [
-    {
-      title: 'Upsell Ladder',
-      description: 'Create 3-tier product offerings with increasing value',
-      status: 'implemented',
-      roi: '+35%'
-    },
-    {
-      title: 'Referral Program',
-      description: 'Set up 30% commission affiliate system',
-      status: 'implemented',
-      roi: '+28%'
-    },
-    {
-      title: 'Email List Building',
-      description: 'Grow list with lead magnets and opt-in sequences',
-      status: 'active',
-      roi: '+45%'
-    },
-    {
-      title: 'Product Bundling',
-      description: 'Create bundle offers that increase average order value',
-      status: 'active',
-      roi: '+32%'
-    },
-    {
-      title: 'Content Distribution',
-      description: 'Multi-channel publishing to maximize reach',
-      status: 'implemented',
-      roi: '+52%'
-    },
-    {
-      title: 'Customer Re-targeting',
-      description: 'Automated sequences for repeat purchases',
-      status: 'implemented',
-      roi: '+29%'
-    }
-  ];
+  useEffect(() => {
+    loadGrowthData();
+  }, []);
 
-  const optimizationOpportunities = [
-    {
-      opportunity: 'Checkout Page Optimization',
-      impact: 'Could increase conversion by 12-15%',
-      effort: 'Low',
-      priority: 'High'
-    },
-    {
-      opportunity: 'Video Sales Page',
-      impact: 'Could increase AOV by 18-22%',
-      effort: 'Medium',
-      priority: 'High'
-    },
-    {
-      opportunity: 'SMS Integration',
-      impact: 'Could recover 8-12% abandoned carts',
-      effort: 'Medium',
-      priority: 'Medium'
-    },
-    {
-      opportunity: 'Premium Tier Product',
-      impact: 'Could add $50K+ annual revenue',
-      effort: 'High',
-      priority: 'Medium'
+  const loadGrowthData = async () => {
+    setLoading(true);
+    setError(null);
+
+    const results = await Promise.allSettled([
+      fetch(`${API}/api/products?limit=100`).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load products (${response.status})`);
+        }
+        return response.json();
+      }),
+      fetch(`${API}/api/opportunities?limit=50`).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load opportunities (${response.status})`);
+        }
+        return response.json();
+      }),
+      fetch(`${API}/api/payments/all-stats`).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load payment stats (${response.status})`);
+        }
+        return response.json();
+      }),
+      fetch(`${API}/api/analytics/revenue-breakdown`).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load revenue breakdown (${response.status})`);
+        }
+        return response.json();
+      })
+    ]);
+
+    const [productsResult, opportunitiesResult, paymentResult, revenueResult] = results;
+
+    setProducts(productsResult.status === 'fulfilled' && Array.isArray(productsResult.value) ? productsResult.value : []);
+    setOpportunities(
+      opportunitiesResult.status === 'fulfilled' && Array.isArray(opportunitiesResult.value)
+        ? opportunitiesResult.value
+        : []
+    );
+    setPaymentStats(paymentResult.status === 'fulfilled' ? paymentResult.value : null);
+    setRevenueBreakdown(revenueResult.status === 'fulfilled' ? revenueResult.value : null);
+
+    const firstRejected = results.find((result) => result.status === 'rejected');
+    if (firstRejected?.reason?.message) {
+      setError(firstRejected.reason.message);
     }
-  ];
+
+    setLoading(false);
+  };
+
+  const sortedProducts = useMemo(() => {
+    return [...products].sort(
+      (left, right) => (right.revenue || 0) - (left.revenue || 0) || (right.conversions || 0) - (left.conversions || 0)
+    );
+  }, [products]);
+
+  const normalizedOpportunities = useMemo(() => {
+    return opportunities
+      .map((opportunity) => ({
+        ...opportunity,
+        normalizedTrendScore: normalizeTrendScore(opportunity.trend_score)
+      }))
+      .sort((left, right) => right.normalizedTrendScore - left.normalizedTrendScore);
+  }, [opportunities]);
+
+  const publishedProducts = products.filter((product) => product.status === 'published').length;
+  const readyProducts = products.filter((product) => product.status === 'ready').length;
+  const highSignalOpportunities = normalizedOpportunities.filter(
+    (opportunity) => opportunity.normalizedTrendScore >= 80
+  );
+  const productsWithoutLinks = products.filter((product) => (product.marketplace_links || []).length === 0);
+  const forecast = revenueBreakdown?.projections || {};
+  const revenueCategories = Object.keys(revenueBreakdown?.by_product_type || {}).length;
+
+  const priorityActions = useMemo(() => {
+    const actions = [];
+
+    if (readyProducts > 0) {
+      actions.push({
+        icon: Zap,
+        title: 'Publish ready inventory',
+        message: `${readyProducts} products are marked ready and can be pushed into a live sales workflow.`
+      });
+    }
+
+    if (highSignalOpportunities.length > 0) {
+      actions.push({
+        icon: TrendingUp,
+        title: 'Validate top opportunities',
+        message: `${highSignalOpportunities.length} opportunities are scoring 80+ and deserve execution review.`
+      });
+    }
+
+    if (productsWithoutLinks.length > 0) {
+      actions.push({
+        icon: Lightbulb,
+        title: 'Finish marketplace coverage',
+        message: `${productsWithoutLinks.length} products still have no marketplace links, so they cannot convert yet.`
+      });
+    }
+
+    if ((paymentStats?.total_sales || 0) === 0 && products.length > 0) {
+      actions.push({
+        icon: AlertCircle,
+        title: 'Turn on first checkout path',
+        message: 'Products exist, but no successful payments have been recorded yet.'
+      });
+    }
+
+    if (actions.length === 0) {
+      actions.push({
+        icon: TrendingUp,
+        title: 'Growth queue is clear',
+        message: 'No obvious blockers are showing from products, opportunities, or revenue projections.'
+      });
+    }
+
+    return actions.slice(0, 4);
+  }, [highSignalOpportunities.length, paymentStats?.total_sales, products.length, productsWithoutLinks.length, readyProducts]);
 
   return (
     <div className="page">
       <div className="page-header">
-        <h1>AI Growth Lab</h1>
-        <p>Run experiments, test variations, and optimize for growth</p>
+        <h1>Growth Lab</h1>
+        <p>Prioritize real launch and revenue moves from current product, opportunity, and payment data</p>
+      </div>
+
+      {error && (
+        <div className="alert alert-error">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="section-header mb-4">
+        <h2>Growth Overview</h2>
+        <button className="btn btn-secondary" onClick={loadGrowthData} disabled={loading}>
+          <RefreshCw size={16} /> {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
-          <h3>Active Experiments</h3>
-          <p className="stat-value">3</p>
-          <p className="stat-change">Running in parallel</p>
+          <h3>Published Products</h3>
+          <p className="stat-value">{loading ? '...' : publishedProducts}</p>
+          <p className="stat-change">Currently live inventory</p>
         </div>
         <div className="stat-card">
-          <h3>Avg Improvement</h3>
-          <p className="stat-value">+26%</p>
-          <p className="stat-change">From optimizations</p>
+          <h3>Ready To Launch</h3>
+          <p className="stat-value">{loading ? '...' : readyProducts}</p>
+          <p className="stat-change">Products ready for publication</p>
         </div>
         <div className="stat-card">
-          <h3>Completed Tests</h3>
-          <p className="stat-value">12</p>
-          <p className="stat-change">All statistically significant</p>
+          <h3>High-Signal Niches</h3>
+          <p className="stat-value">{loading ? '...' : highSignalOpportunities.length}</p>
+          <p className="stat-change">Opportunity score 80 and above</p>
         </div>
         <div className="stat-card">
-          <h3>Growth ROI</h3>
-          <p className="stat-value">+187%</p>
-          <p className="stat-change">Revenue increase</p>
-        </div>
-      </div>
-
-      <div className="content-section">
-        <div className="section-header">
-          <h2>Active Experiments</h2>
-          <button className="btn btn-primary">Create Experiment</button>
-        </div>
-
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Experiment</th>
-                <th>Status</th>
-                <th>Duration</th>
-                <th>Control vs Variant</th>
-                <th>Improvement</th>
-              </tr>
-            </thead>
-            <tbody>
-              {experiments.map((exp) => (
-                <tr key={exp.id}>
-                  <td className="font-semibold">{exp.name}</td>
-                  <td>
-                    <span className={`badge badge-${exp.status === 'running' ? 'info' : 'success'}`}>
-                      {exp.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="duration-info">
-                      <small>{exp.daysLeft}</small>
-                      <div className="progress-bar" style={{ width: '100px' }}>
-                        <div
-                          className="progress-fill"
-                          style={{
-                            width: `${100 - (exp.daysLeft === 'Complete' ? 100 : parseInt(exp.daysLeft))}%`
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="text-secondary">{exp.control} vs {exp.variant}</td>
-                  <td className="text-success font-semibold">{exp.improvement}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="content-section">
-        <h2>Growth Strategies Implemented</h2>
-        <div className="strategies-grid">
-          {growthStrategies.map((strategy, idx) => (
-            <div key={idx} className="strategy-card">
-              <div className="strategy-header">
-                <h4>{strategy.title}</h4>
-                <span className={`badge badge-${strategy.status}`}>{strategy.status}</span>
-              </div>
-              <p className="text-secondary">{strategy.description}</p>
-              <div className="strategy-roi">
-                <span className="roi-value">{strategy.roi}</span>
-                <span>avg ROI</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="content-section">
-        <h2>Optimization Opportunities</h2>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Opportunity</th>
-                <th>Potential Impact</th>
-                <th>Effort Level</th>
-                <th>Priority</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {optimizationOpportunities.map((opp, idx) => (
-                <tr key={idx}>
-                  <td className="font-semibold">{opp.opportunity}</td>
-                  <td className="text-success">{opp.impact}</td>
-                  <td>
-                    <span className={`badge badge-${opp.effort.toLowerCase()}`}>
-                      {opp.effort}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge badge-${opp.priority.toLowerCase()}`}>
-                      {opp.priority}
-                    </span>
-                  </td>
-                  <td>
-                    <button className="btn btn-secondary btn-small">Test</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h3>Next Month Projection</h3>
+          <p className="stat-value">{loading ? '...' : currencyFormatter.format(forecast.next_month || 0)}</p>
+          <p className="stat-change">Derived from tracked product revenue</p>
         </div>
       </div>
 
       <div className="grid-2">
         <div className="content-section">
-          <h3>Quick Wins</h3>
-          <div className="quick-wins-list">
-            <div className="quick-win">
-              <Zap size={20} className="text-warning" />
-              <div>
-                <p className="font-semibold">Duplicate Top Performer</p>
-                <p className="text-secondary">Create variations of best-selling product</p>
-                <button className="btn btn-secondary btn-small mt-2">Start</button>
+          <h3>Priority Actions</h3>
+          {priorityActions.map((action) => {
+            const Icon = action.icon;
+
+            return (
+              <div key={action.title} className="insight-box">
+                <Icon size={20} />
+                <div>
+                  <p className="font-semibold">{action.title}</p>
+                  <p className="text-secondary">{action.message}</p>
+                </div>
               </div>
-            </div>
-            <div className="quick-win">
-              <TrendingUp size={20} className="text-success" />
-              <div>
-                <p className="font-semibold">Scale Winners Fast</p>
-                <p className="text-secondary">Increase ad spend for high ROI products</p>
-                <button className="btn btn-secondary btn-small mt-2">Configure</button>
-              </div>
-            </div>
-            <div className="quick-win">
-              <Lightbulb size={20} className="text-info" />
-              <div>
-                <p className="font-semibold">New Market Test</p>
-                <p className="text-secondary">Test products in emerging niches</p>
-                <button className="btn btn-secondary btn-small mt-2">Launch</button>
-              </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         <div className="content-section">
-          <h3>Predictive Analytics</h3>
-          <div className="prediction-box">
-            <div className="prediction-item">
-              <span className="label">Est. Revenue (Next 30 days)</span>
-              <span className="value">$76,234</span>
-              <span className="forecast">↑ 58% vs previous month</span>
+          <h3>Forecast Snapshot</h3>
+          <div className="stack-list">
+            <div className="metric-row">
+              <span>Next Week Revenue</span>
+              <span className="metric-value">{currencyFormatter.format(forecast.next_week || 0)}</span>
             </div>
-            <div className="prediction-item">
-              <span className="label">Recommended Price Point</span>
-              <span className="value">$87</span>
-              <span className="forecast">+$15 from current</span>
+            <div className="metric-row">
+              <span>Next Month Revenue</span>
+              <span className="metric-value">{currencyFormatter.format(forecast.next_month || 0)}</span>
             </div>
-            <div className="prediction-item">
-              <span className="label">Best Time to Launch</span>
-              <span className="value">Tuesday 9 AM</span>
-              <span className="forecast">+34% traffic vs avg</span>
+            <div className="metric-row">
+              <span>Next Quarter Revenue</span>
+              <span className="metric-value">{currencyFormatter.format(forecast.next_quarter || 0)}</span>
             </div>
-            <div className="prediction-item">
-              <span className="label">Churn Risk</span>
-              <span className="value">4.2%</span>
-              <span className="forecast">Below industry avg</span>
+            <div className="metric-row">
+              <span>Total Sales</span>
+              <span className="metric-value">{paymentStats?.total_sales || 0}</span>
+            </div>
+            <div className="metric-row">
+              <span>Average Order Value</span>
+              <span className="metric-value">{currencyFormatter.format(paymentStats?.average_order_value || 0)}</span>
+            </div>
+            <div className="metric-row">
+              <span>Tracked Revenue Categories</span>
+              <span className="metric-value">{revenueCategories}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="content-section">
-        <h3>Growth Settings & Configuration</h3>
-        <div className="settings-grid">
-          <div className="setting">
-            <label>Automatic Duplicate Winners</label>
-            <input type="checkbox" defaultChecked />
+        <h2>Top Product Momentum</h2>
+        {sortedProducts.length === 0 ? (
+          <div className="empty-state">
+            <p>No products are available yet, so growth prioritization is currently empty.</p>
           </div>
-          <div className="setting">
-            <label>A/B Testing Enabled</label>
-            <input type="checkbox" defaultChecked />
+        ) : (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Status</th>
+                  <th>Clicks</th>
+                  <th>Conversions</th>
+                  <th>Revenue</th>
+                  <th>Marketplace Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedProducts.slice(0, 6).map((product) => (
+                  <tr key={product.id}>
+                    <td className="font-semibold">{product.title}</td>
+                    <td>
+                      <span className="badge badge-secondary">{titleCase(product.status)}</span>
+                    </td>
+                    <td>{product.clicks || 0}</td>
+                    <td>{product.conversions || 0}</td>
+                    <td className="text-success font-semibold">{currencyFormatter.format(product.revenue || 0)}</td>
+                    <td>{(product.marketplace_links || []).length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="setting">
-            <label>Minimum Sample Size</label>
-            <input type="number" defaultValue="100" />
+        )}
+      </div>
+
+      <div className="content-section">
+        <h2>Opportunity Watchlist</h2>
+        {normalizedOpportunities.length === 0 ? (
+          <div className="empty-state">
+            <p>No opportunities have been stored yet.</p>
           </div>
-          <div className="setting">
-            <label>Significance Level</label>
-            <select>
-              <option>95% (Recommended)</option>
-              <option>90%</option>
-              <option>99%</option>
-            </select>
+        ) : (
+          <div className="table-container">
+            <table className="data-table small">
+              <thead>
+                <tr>
+                  <th>Niche</th>
+                  <th>Trend Score</th>
+                  <th>Market Size</th>
+                  <th>Keywords</th>
+                  <th>Priority</th>
+                </tr>
+              </thead>
+              <tbody>
+                {normalizedOpportunities.slice(0, 6).map((opportunity) => {
+                  const priority =
+                    opportunity.normalizedTrendScore >= 80
+                      ? 'high'
+                      : opportunity.normalizedTrendScore >= 60
+                        ? 'medium'
+                        : 'low';
+
+                  return (
+                    <tr key={opportunity.id}>
+                      <td className="font-semibold">{opportunity.niche}</td>
+                      <td>
+                        <div className="score-badge">{opportunity.normalizedTrendScore.toFixed(1)}</div>
+                      </td>
+                      <td>{opportunity.market_size || 'Unknown'}</td>
+                      <td>{(opportunity.keywords || []).length}</td>
+                      <td>
+                        <span className={`badge badge-${priority}`}>{titleCase(priority)}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
+
+      <div className="grid-2">
+        <div className="content-section">
+          <h3>Launch Constraints</h3>
+          <div className="stack-list">
+            <div className="detail-row">
+              <span>Products without marketplace links</span>
+              <span className="metric-value">{productsWithoutLinks.length}</span>
+            </div>
+            <div className="detail-row">
+              <span>Draft products</span>
+              <span className="metric-value">{products.filter((product) => product.status === 'draft').length}</span>
+            </div>
+            <div className="detail-row">
+              <span>Tracked opportunities</span>
+              <span className="metric-value">{normalizedOpportunities.length}</span>
+            </div>
+            <div className="detail-row">
+              <span>Products with sales</span>
+              <span className="metric-value">{paymentStats?.products_with_sales || 0}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="content-section">
+          <h3>Recommended Next Moves</h3>
+          {products.length === 0 && normalizedOpportunities.length === 0 ? (
+            <div className="empty-state">
+              <p>Create products or capture opportunities first so the growth queue has something real to optimize.</p>
+            </div>
+          ) : (
+            <div className="stack-list">
+              {readyProducts > 0 && (
+                <div className="detail-row">
+                  <span>Publish ready products</span>
+                  <span className="metric-value">{readyProducts}</span>
+                </div>
+              )}
+              {highSignalOpportunities.length > 0 && (
+                <div className="detail-row">
+                  <span>Review top-scoring opportunities</span>
+                  <span className="metric-value">{highSignalOpportunities.length}</span>
+                </div>
+              )}
+              <div className="detail-row">
+                <span>Current total revenue</span>
+                <span className="metric-value">{currencyFormatter.format(paymentStats?.total_revenue || 0)}</span>
+              </div>
+              <div className="detail-row">
+                <span>Today revenue</span>
+                <span className="metric-value">{currencyFormatter.format(paymentStats?.today_revenue || 0)}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

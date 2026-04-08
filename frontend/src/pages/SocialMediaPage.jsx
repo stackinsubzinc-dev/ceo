@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-
-const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 import { Loader, AlertCircle, Check, Plus, Trash2, Share2, Calendar, TrendingUp } from 'lucide-react';
 import './Pages.css';
+
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 export default function SocialMediaPage() {
   const [platforms, setPlatforms] = useState({
@@ -133,27 +133,22 @@ export default function SocialMediaPage() {
 
     try {
       const now = new Date();
-      const responses = await Promise.all(
-        Object.entries(postsGenerated).map(([platform, posts]) =>
-          fetch(`${API}/api/social/schedule`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              posts_by_platform: { [platform]: posts },
-              start_date: now.toISOString(),
-              interval_hours: 24
-            })
-          })
-        )
-      );
+      const response = await fetch(`${API}/api/social/schedule-multi-platform`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          posts_by_platform: postsGenerated,
+          start_date: now.toISOString(),
+          interval_hours: 24
+        })
+      });
 
-      const allSuccessful = responses.every(r => r.ok);
-      if (allSuccessful) {
-        setSuccess('✅ All posts scheduled successfully!');
-        setCampaignStatus('scheduled');
-      } else {
-        throw new Error('Some posts failed to schedule');
+      if (!response.ok) {
+        throw new Error('Failed to schedule posts');
       }
+
+      setSuccess('✅ All posts scheduled successfully!');
+      setCampaignStatus('scheduled');
     } catch (err) {
       setError(`Error: ${err.message}`);
     } finally {

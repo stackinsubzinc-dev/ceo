@@ -767,7 +767,8 @@ tbody td {
    ============================================================================ */
 
 .activity-list {
-  space-y: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .activity-item {
@@ -1014,7 +1015,8 @@ tbody td {
 }
 
 .category-list {
-  space-y: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .category-item {
@@ -1065,7 +1067,60 @@ tbody td {
 }
 
 .keys-table {
-  space-y: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  padding: 32px 24px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.stack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-row,
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-row:last-child,
+.metric-row:last-child {
+  border-bottom: none;
+}
+
+.metric-value {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.inline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-code {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--color-accent);
 }
 
 .key-row {

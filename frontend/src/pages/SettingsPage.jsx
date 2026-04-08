@@ -1,152 +1,95 @@
-import React, { useState, useEffect } from 'react';
-
-const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-import { Eye, EyeOff, Copy, Check, Trash2, Plus, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Check, Plus, RefreshCw, X } from 'lucide-react';
 import './Pages.css';
 
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
 const SettingsPage = () => {
-  const [showKeys, setShowKeys] = useState({});
-  const [copied, setCopied] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [apiKeys, setApiKeys] = useState([]);
-  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [keyStatus, setKeyStatus] = useState({});
   const [formData, setFormData] = useState({
-    name: '',
-    key: '',
-    category: 'AI',
-    description: ''
+    templateName: 'openai_key',
+    key: ''
   });
 
-  // Backend API key templates
   const backendKeyTemplates = [
-    { name: 'openai_key', label: 'OpenAI API Key', category: 'AI' },
-    { name: 'anthropic_key', label: 'Anthropic Claude Key', category: 'AI' },
-    { name: 'dalle_key', label: 'DALL-E API Key', category: 'AI' },
-    { name: 'sendgrid_key', label: 'SendGrid API Key', category: 'Email' },
-    { name: 'stripe_key', label: 'Stripe Live Key', category: 'Platform' },
-    { name: 'gumroad_key', label: 'Gumroad API Key', category: 'Platform' },
-    { name: 'gumroad_secret', label: 'Gumroad Secret', category: 'Platform' },
-    { name: 'mongodb_url', label: 'MongoDB Connection String', category: 'Database' }
+    { name: 'openai_key', label: 'OpenAI API Key', category: 'AI', description: 'Used for product ideation, copy, and AI generation.' },
+    { name: 'anthropic_key', label: 'Anthropic Claude Key', category: 'AI', description: 'Used for long-form analysis and strategy tasks.' },
+    { name: 'dalle_key', label: 'DALL-E API Key', category: 'AI', description: 'Used for image generation and visual assets.' },
+    { name: 'sendgrid_key', label: 'SendGrid API Key', category: 'Email', description: 'Used for transactional email and sequences.' },
+    { name: 'stripe_key', label: 'Stripe Live Key', category: 'Platform', description: 'Used for payments and checkout sessions.' },
+    { name: 'gumroad_key', label: 'Gumroad API Key', category: 'Platform', description: 'Used to publish and sync Gumroad products.' },
+    { name: 'gumroad_secret', label: 'Gumroad Secret', category: 'Platform', description: 'Required with the Gumroad API key for authentication.' },
+    { name: 'mongodb_url', label: 'MongoDB Connection String', category: 'Database', description: 'Used for persistent storage and backend reconnects.' }
   ];
-
-  // Function to load keys from localStorage
-  const loadKeysFromStorage = () => {
-    const savedKeys = localStorage.getItem('apiKeys');
-    if (savedKeys) {
-      try {
-        const parsed = JSON.parse(savedKeys);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setApiKeys(parsed);
-        }
-      } catch (e) {
-        console.error('Failed to load saved keys', e);
-      }
-    }
-  };
-
-  // Load keys from localStorage on mount and when storage changes
-  useEffect(() => {
-    // Load immediately
-    loadKeysFromStorage();
-
-    // Also try loading after a small delay in case localStorage is being populated
-    const timer = setTimeout(() => {
-      loadKeysFromStorage();
-    }, 500);
-
-    // Listen for storage changes
-    window.addEventListener('storage', loadKeysFromStorage);
-    window.addEventListener('apiKeysUpdated', loadKeysFromStorage);
-    
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('storage', loadKeysFromStorage);
-      window.removeEventListener('apiKeysUpdated', loadKeysFromStorage);
-    };
-  }, []);
-
-  // Save keys to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('apiKeys', JSON.stringify(apiKeys));
-  }, [apiKeys]);
 
   const categories = ['AI', 'Platform', 'Email', 'Social', 'Analytics', 'Database'];
 
-  const copyToClipboard = (key, id) => {
-    navigator.clipboard.writeText(key);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+  const loadKeyStatus = async () => {
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API}/api/keys/status`);
+      if (!response.ok) {
+        throw new Error(`Failed to load key status (${response.status})`);
+      }
+
+      const data = await response.json();
+      setKeyStatus(data.api_keys_status || {});
+    } catch (loadError) {
+      console.error('Failed to load backend key status:', loadError);
+      setSyncStatus({
+        type: 'error',
+        message: loadError.message
+      });
+      setKeyStatus({});
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleKeyVisibility = (id) => {
-    setShowKeys(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
+  useEffect(() => {
+    loadKeyStatus();
+  }, []);
 
-  const handleAddKey = (e) => {
+  const apiKeys = useMemo(() => {
+    return backendKeyTemplates.map((template) => {
+      const rawStatus = keyStatus[template.name] || 'Missing';
+      const configured = String(rawStatus).includes('Configured') || String(rawStatus).includes('Connected');
+
+      return {
+        ...template,
+        configured,
+        statusText: rawStatus
+      };
+    });
+  }, [keyStatus]);
+
+  const handleSaveKey = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.key) {
-      alert('Please fill in key name and value');
+    if (!formData.templateName || !formData.key) {
+      setSyncStatus({
+        type: 'error',
+        message: 'Select a key template and provide the secret value.'
+      });
       return;
     }
-    
-    const newKey = {
-      id: Date.now(),
-      ...formData,
-      status: 'connected',
-      createdAt: new Date().toISOString()
-    };
-    
-    setApiKeys([...apiKeys, newKey]);
-    setFormData({ name: '', key: '', category: 'AI', description: '' });
-    setShowAddForm(false);
-  };
 
-  const handleDeleteKey = (id) => {
-    if (confirm('Are you sure you want to delete this key?')) {
-      setApiKeys(apiKeys.filter(k => k.id !== id));
-    }
-  };
-
-  const maskKey = (key) => {
-    if (!key || key.length < 8) return '***';
-    return key.substring(0, 4) + '***...' + key.substring(key.length - 4);
-  };
-
-  // Sync keys to backend API
-  const syncKeysToBackend = async () => {
-    setSyncing(true);
+    setSaving(true);
     setSyncStatus(null);
-    
-    try {
-      // Transform localStorage keys to backend format
-      const keysToSend = {};
-      apiKeys.forEach(apiKey => {
-        // Map display names to backend key names
-        if (apiKey.name.toLowerCase().includes('openai')) keysToSend.openai_key = apiKey.key;
-        if (apiKey.name.toLowerCase().includes('anthropic')) keysToSend.anthropic_key = apiKey.key;
-        if (apiKey.name.toLowerCase().includes('dall')) keysToSend.dalle_key = apiKey.key;
-        if (apiKey.name.toLowerCase().includes('sendgrid')) keysToSend.sendgrid_key = apiKey.key;
-        if (apiKey.name.toLowerCase().includes('stripe')) keysToSend.stripe_key = apiKey.key;
-        if (apiKey.category === 'Platform' && apiKey.name.toLowerCase().includes('gumroad')) {
-          if (apiKey.name.toLowerCase().includes('secret')) {
-            keysToSend.gumroad_secret = apiKey.key;
-          } else {
-            keysToSend.gumroad_key = apiKey.key;
-          }
-        }
-        if (apiKey.name.toLowerCase().includes('mongodb')) keysToSend.mongodb_url = apiKey.key;
-      });
 
+    try {
       const response = await fetch(`${API}/api/keys/store`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(keysToSend)
+        body: JSON.stringify({
+          [formData.templateName]: formData.key
+        })
       });
 
       if (!response.ok) {
@@ -156,22 +99,24 @@ const SettingsPage = () => {
       const result = await response.json();
       setSyncStatus({
         type: 'success',
-        message: `✅ Successfully synced ${result.keys_stored} keys to backend!`
+        message: `Stored ${result.keys_stored} key securely in the backend.`
       });
-      setTimeout(() => setSyncStatus(null), 5000);
+      setFormData({ templateName: 'openai_key', key: '' });
+      setShowAddForm(false);
+      await loadKeyStatus();
     } catch (error) {
       setSyncStatus({
         type: 'error',
-        message: `❌ Failed to sync keys: ${error.message}`
+        message: `Failed to store key: ${error.message}`
       });
-      console.error('Sync error:', error);
+      console.error('Key storage error:', error);
     } finally {
-      setSyncing(false);
+      setSaving(false);
     }
   };
 
   const getCategoryCount = (category) => {
-    return apiKeys.filter(k => k.category === category).length;
+    return apiKeys.filter((key) => key.category === category && key.configured).length;
   };
 
   return (
@@ -184,59 +129,36 @@ const SettingsPage = () => {
       <div className="content-section">
         <div className="section-header">
           <h2>API Keys Overview</h2>
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowAddForm(true)}
-          >
-            + Add New Key
-          </button>
+          <div className="button-group">
+            <button className="btn btn-secondary" onClick={loadKeyStatus} disabled={loading}>
+              <RefreshCw size={16} /> {loading ? 'Refreshing...' : 'Refresh Status'}
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowAddForm(true)}>
+              <Plus size={16} /> Configure Key
+            </button>
+          </div>
         </div>
 
         <div className="keys-summary">
           <div className="summary-item">
-            <span className="summary-label">Total Keys</span>
+            <span className="summary-label">Supported Keys</span>
             <span className="summary-value">{apiKeys.length}</span>
           </div>
           <div className="summary-item">
-            <span className="summary-label">Connected</span>
-            <span className="summary-value text-success">{apiKeys.filter(k => k.status === 'connected').length}</span>
+            <span className="summary-label">Configured</span>
+            <span className="summary-value text-success">{apiKeys.filter((key) => key.configured).length}</span>
           </div>
           <div className="summary-item">
-            <span className="summary-label">Pending</span>
-            <span className="summary-value text-warning">{apiKeys.filter(k => k.status === 'pending').length}</span>
+            <span className="summary-label">Missing</span>
+            <span className="summary-value text-warning">{apiKeys.filter((key) => !key.configured).length}</span>
           </div>
         </div>
 
         {syncStatus && (
-          <div style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            borderRadius: '6px',
-            backgroundColor: syncStatus.type === 'success' ? '#d4edda' : '#f8d7da',
-            color: syncStatus.type === 'success' ? '#155724' : '#721c24',
-            border: `1px solid ${syncStatus.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`
-          }}>
+          <div className={`alert ${syncStatus.type === 'success' ? 'alert-success' : 'alert-error'}`}>
             {syncStatus.message}
           </div>
         )}
-
-        <button
-          onClick={syncKeysToBackend}
-          disabled={syncing || apiKeys.length === 0}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: syncing ? '#cccccc' : '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: syncing ? 'not-allowed' : 'pointer',
-            marginBottom: '16px',
-            fontSize: '14px',
-            fontWeight: '600'
-          }}
-        >
-          {syncing ? '🔄 Syncing...' : '📤 Sync Keys to Backend'}
-        </button>
       </div>
 
       <div className="grid-2">
@@ -266,56 +188,37 @@ const SettingsPage = () => {
       </div>
 
       <div className="content-section">
-        <h2>All API Keys</h2>
-        {apiKeys.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
-            <p>No API keys added yet. Click "+ Add New Key" to get started.</p>
+        <h2>Backend Key Status</h2>
+        {loading ? (
+          <div className="empty-state">
+            <p>Loading backend key status...</p>
           </div>
         ) : (
           <div className="keys-table">
-            {apiKeys.map((key, idx) => (
-              <div key={key.id} className="key-row">
+            {apiKeys.map((key) => (
+              <div key={key.name} className="key-row">
                 <div className="key-info">
                   <div className="key-name">
-                    <h4>{key.name}</h4>
+                    <h4>{key.label}</h4>
                     <span className={`badge badge-${key.category.toLowerCase()}`}>{key.category}</span>
                   </div>
+                  <p className="text-secondary">{key.description}</p>
                   <div className="key-display">
-                    <code>
-                      {showKeys[key.id] ? key.key : maskKey(key.key)}
-                    </code>
+                    <code>{key.statusText}</code>
                   </div>
-                  {key.description && (
-                    <div style={{ fontSize: '12px', color: '#999', marginTop: '5px' }}>
-                      {key.description}
-                    </div>
-                  )}
                 </div>
 
                 <div className="key-actions">
                   <button
-                    className="key-btn"
-                    onClick={() => toggleKeyVisibility(key.id)}
-                    title={showKeys[key.id] ? 'Hide' : 'Show'}
+                    className="btn btn-secondary btn-small"
+                    onClick={() => {
+                      setFormData({ templateName: key.name, key: '' });
+                      setShowAddForm(true);
+                    }}
                   >
-                    {showKeys[key.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                    {key.configured ? 'Update' : 'Configure'}
                   </button>
-                  <button
-                    className="key-btn"
-                    onClick={() => copyToClipboard(key.key, key.id)}
-                    title="Copy to clipboard"
-                  >
-                    {copied === key.id ? <Check size={18} className="text-success" /> : <Copy size={18} />}
-                  </button>
-                  <button
-                    className="key-btn"
-                    onClick={() => handleDeleteKey(key.id)}
-                    title="Delete key"
-                    style={{ color: '#ff6b6b' }}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                  <span className={`status-dot status-${key.status}`}></span>
+                  <span className={`status-dot ${key.configured ? 'status-connected' : 'status-pending'}`}></span>
                 </div>
               </div>
             ))}
@@ -328,7 +231,7 @@ const SettingsPage = () => {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2>Add New API Key</h2>
+              <h2>Configure Backend Key</h2>
               <button
                 className="modal-close"
                 onClick={() => setShowAddForm(false)}
@@ -337,27 +240,29 @@ const SettingsPage = () => {
               </button>
             </div>
 
-            <form onSubmit={handleAddKey} className="add-key-form">
+            <form onSubmit={handleSaveKey} className="add-key-form">
+              <div className="form-group">
+                <label>Backend Key</label>
+                <select
+                  value={formData.templateName}
+                  onChange={(event) => setFormData({ ...formData, templateName: event.target.value })}
+                >
+                  {backendKeyTemplates.map((template) => (
+                    <option key={template.name} value={template.name}>
+                      {template.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Key Name *</label>
+                  <label>Category</label>
                   <input
                     type="text"
-                    placeholder="e.g., Production OpenAI Key"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    value={backendKeyTemplates.find((template) => template.name === formData.templateName)?.category || ''}
+                    disabled
                   />
-                </div>
-                <div className="form-group">
-                  <label>Category</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
-                  >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
@@ -365,24 +270,20 @@ const SettingsPage = () => {
                 <label>API Key / Token *</label>
                 <input
                   type="password"
-                  placeholder="Paste your API key here"
+                  placeholder="Paste the secret value to store securely in the backend"
                   value={formData.key}
-                  onChange={(e) => setFormData({...formData, key: e.target.value})}
+                  onChange={(event) => setFormData({ ...formData, key: event.target.value })}
                 />
               </div>
 
-              <div className="form-group">
-                <label>Description (Optional)</label>
-                <textarea
-                  placeholder="What is this key used for?"
-                  rows="3"
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                ></textarea>
-              </div>
+              <p className="text-secondary" style={{ margin: 0 }}>
+                Keys are written directly to the backend and are no longer displayed or cached in the browser UI.
+              </p>
 
               <div className="form-actions">
-                <button type="submit" className="btn btn-primary">Save Key</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Key'}
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"

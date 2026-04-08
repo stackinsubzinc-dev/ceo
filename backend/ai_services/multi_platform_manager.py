@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 import json
+from .tiktok_manager import get_tiktok_manager
 
 load_dotenv()
 
@@ -344,15 +345,17 @@ class PlatformIntegration:
     
     @staticmethod
     async def post_to_tiktok(content: Dict[str, Any], api_key: str) -> Dict[str, Any]:
-        """Post to TikTok"""
-        # In production: use TikTok Creator API
-        return {
-            "status": "success",
-            "platform": "tiktok",
-            "post_url": f"https://www.tiktok.com/@creator/video/123456",
-            "reach": "50,000+",
-            "posted_at": datetime.now().isoformat()
-        }
+        """Post to TikTok using TikTokManager"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.post_video(content)
+            return result
+        except Exception as e:
+            return {
+                "status": "error",
+                "platform": "tiktok",
+                "message": str(e)
+            }
     
     @staticmethod
     async def post_to_instagram(content: Dict[str, Any], api_key: str) -> Dict[str, Any]:
@@ -401,3 +404,85 @@ class PlatformIntegration:
             "views": "0+",
             "posted_at": datetime.now().isoformat()
         }
+    
+    # TikTok-specific operations
+    
+    @staticmethod
+    async def edit_tiktok_video(video_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Edit a TikTok video"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.edit_video(video_id, updates)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def schedule_tiktok_post(content: Dict[str, Any], schedule_time: str) -> Dict[str, Any]:
+        """Schedule a TikTok post for later"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.schedule_post(content, schedule_time)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def delete_tiktok_video(video_id: str) -> Dict[str, Any]:
+        """Delete a TikTok video"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.delete_video(video_id)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def get_tiktok_video_analytics(video_id: str) -> Dict[str, Any]:
+        """Get analytics for a TikTok video"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.get_video_analytics(video_id)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def get_tiktok_channel_analytics(period_days: int = 30) -> Dict[str, Any]:
+        """Get TikTok channel analytics"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.get_channel_analytics(period_days)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def moderate_tiktok_comments(video_id: str, action: str = "get") -> Dict[str, Any]:
+        """Moderate comments on a TikTok video"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.moderate_comments(video_id, action)
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def get_tiktok_trending_sounds() -> Dict[str, Any]:
+        """Get trending TikTok sounds"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.get_trending_sounds()
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    @staticmethod
+    async def get_tiktok_trending_hashtags() -> Dict[str, Any]:
+        """Get trending TikTok hashtags"""
+        try:
+            tiktok_manager = get_tiktok_manager()
+            result = await tiktok_manager.get_trending_hashtags()
+            return result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}

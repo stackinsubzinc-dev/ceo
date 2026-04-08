@@ -9,6 +9,11 @@ from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 import json
 from functools import wraps
+from pathlib import Path
+
+
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class ProductionLogger:
@@ -17,13 +22,17 @@ class ProductionLogger:
     def __init__(self, name: str):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.DEBUG)
+        self.logger.propagate = False
+
+        if self.logger.handlers:
+            return
         
         # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         
         # File handler
-        file_handler = logging.FileHandler(f"logs/{name}.log")
+        file_handler = logging.FileHandler(LOGS_DIR / f"{name}.log")
         file_handler.setLevel(logging.DEBUG)
         
         # Formatter

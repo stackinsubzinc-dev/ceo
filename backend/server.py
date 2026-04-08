@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import PyMongoError
 import os
 import logging
 from pathlib import Path
@@ -41,6 +42,10 @@ from ai_services.opportunity_hunter import OpportunityHunter, ProductDiscoveryEn
 from ai_services.project_manager import ProjectFileManager, PublishingGuide
 from ai_services.ai_assistant import AIAssistant
 from ai_services.team_engine import AgentTeamEngine
+from ai_services.product_tiktok_integration import get_product_tiktok_integration
+from ai_services.etsy_manager import get_etsy_manager
+from ai_services.gemini_manager import get_gemini_manager, initialize_gemini
+from ai_services.gemini_product_generator import get_gemini_generator
 
 # Import core system
 from core.routes import router as core_router
@@ -49,14 +54,45 @@ from core.routes import router as core_router
 
 
 ROOT_DIR = Path(__file__).parent
+
+
+def resolve_raw_mongo_url() -> Optional[str]:
+    return (
+        keys_manager.get_key('mongodb_url')
+        or os.environ.get('MONGO_URI')
+        or os.environ.get('MONGO_URL')
+    )
+
+
+def is_supported_mongo_url(candidate: Optional[str]) -> bool:
+    if not candidate:
+        return False
+
+    normalized_candidate = candidate.lower()
+    unsupported_markers = [
+        'atlas-sql-',
+        '.query.mongodb.net'
+    ]
+    return not any(marker in normalized_candidate for marker in unsupported_markers)
+
+
+def resolve_mongo_url() -> Optional[str]:
+    raw_mongo_url = resolve_raw_mongo_url()
+    if raw_mongo_url and is_supported_mongo_url(raw_mongo_url):
+        return raw_mongo_url
+    return None
+
+
+def resolve_db_name() -> str:
+    return os.environ.get('DB_NAME') or os.environ.get('MONGO_DB_NAME') or 'ceo_ai'
+
+
+load_dotenv(ROOT_DIR.parent / '.env')
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection - try to get from keys first, then env, then demo mode
-mongo_url = keys_manager.get_key('mongodb_url') or os.environ.get('MONGO_URL')
-
-# Use the hardcoded MongoDB connection from earlier setup
-if not mongo_url:
-    mongo_url = 'mongodb+srv://stackdigitz_db_user:xBj1y07Rr0bANp68@cluster0.rfvpl5d.mongodb.net/?appName=Cluster0'
+# MongoDB connection - try to get from keys first, then env
+raw_mongo_url = resolve_raw_mongo_url()
+mongo_url = resolve_mongo_url()
 
 db = None
 client = None
@@ -65,7 +101,7 @@ if mongo_url:
     try:
         client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000, connectTimeoutMS=10000)
         # Verify connection works
-        db_name = os.environ.get('DB_NAME', 'ceo_factory')
+        db_name = resolve_db_name()
         db = client[db_name]
         print(f"✅ MongoDB connected to {db_name}")
     except Exception as e:
@@ -74,7 +110,55 @@ if mongo_url:
         db = None
         client = None
 else:
-    print("ℹ️  MONGO_URL not available. Running in demo mode.")
+    if raw_mongo_url:
+        print("⚠️  Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint. Persistent storage disabled.")
+    else:
+        print("ℹ️  MongoDB URL not available. Persistent storage disabled.")
+
+
+def is_database_query_error(error: Exception) -> bool:
+    if isinstance(error, PyMongoError):
+        return True
+
+    message = str(error).lower()
+    database_error_markers = [
+        'authentication failed',
+        'auth required',
+        'unauthorized',
+        'not authorized',
+        'replicasetnoprimary',
+        'no replica set members',
+        'server selection timed out'
+    ]
+    return any(marker in message for marker in database_error_markers)
+
+
+def raise_openai_http_error(error: Exception, service_name: str):
+    if isinstance(error, openai.RateLimitError):
+        raise HTTPException(
+            status_code=429,
+            detail=f"{service_name} quota exceeded or rate limited: {str(error)}"
+        )
+
+    if isinstance(error, openai.AuthenticationError):
+        raise HTTPException(
+            status_code=401,
+            detail=f"{service_name} authentication failed: {str(error)}"
+        )
+
+    if isinstance(error, openai.PermissionDeniedError):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{service_name} permission denied: {str(error)}"
+        )
+
+    if isinstance(error, openai.BadRequestError):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{service_name} request rejected: {str(error)}"
+        )
+
+    raise HTTPException(status_code=502, detail=f"{service_name} API error: {str(error)}")
 
 # Initialize AI services
 opportunity_scout = OpportunityScout()
@@ -282,14 +366,21 @@ async def store_api_keys(keys: APIKeyInput):
         
         # If MongoDB URL provided, try to reconnect
         if 'mongodb_url' in keys_data and keys_data['mongodb_url']:
-            global db, client
+            global db, client, mongo_url
             try:
                 new_mongo_url = keys_data['mongodb_url']
-                if client:
+                if client is not None:
                     client.close()
-                client = AsyncIOMotorClient(new_mongo_url, serverSelectionTimeoutMS=5000)
-                db = client[os.environ.get('DB_NAME', 'ceo_factory')]
-                print(f"✅ MongoDB reconnected with provided URL")
+                if is_supported_mongo_url(new_mongo_url):
+                    client = AsyncIOMotorClient(new_mongo_url, serverSelectionTimeoutMS=5000)
+                    db = client[resolve_db_name()]
+                    mongo_url = new_mongo_url
+                    print("✅ MongoDB reconnected with provided URL")
+                else:
+                    client = None
+                    db = None
+                    mongo_url = None
+                    print("⚠️  MongoDB connection skipped: unsupported Atlas SQL/query endpoint")
             except Exception as e:
                 print(f"⚠️  MongoDB connection failed: {e}")
         
@@ -305,15 +396,39 @@ async def store_api_keys(keys: APIKeyInput):
 @api_router.get("/keys/status")
 async def get_keys_status():
     """Check which API keys are configured"""
-    key_names = ['openai_key', 'anthropic_key', 'dalle_key', 'sendgrid_key', 'stripe_key', 'gumroad_key']
+    current_mongo_url = resolve_raw_mongo_url() or mongo_url
+    supported_mongo_url = resolve_mongo_url() or mongo_url
+    key_names = [
+        'openai_key',
+        'anthropic_key',
+        'dalle_key',
+        'sendgrid_key',
+        'stripe_key',
+        'gumroad_key',
+        'gumroad_secret',
+        'mongodb_url'
+    ]
     status = {}
     
     for key_name in key_names:
         key_value = keys_manager.get_key(key_name)
+        if key_name == 'mongodb_url' and not key_value:
+            key_value = current_mongo_url
         status[key_name] = "✅ Configured" if key_value else "❌ Not configured"
     
-    # Also check MongoDB
-    status['mongodb'] = "✅ Connected" if db else "⏳ Not connected yet"
+    # Report database reachability separately from key storage.
+    if current_mongo_url and not is_supported_mongo_url(current_mongo_url):
+        status['database_connection'] = "⚠️ Unsupported connection string"
+        status['mongodb_url'] = "⚠️ Configured, unsupported connection string"
+    elif client is not None and supported_mongo_url:
+        try:
+            await client.admin.command('ping')
+            status['database_connection'] = "✅ Connected"
+        except Exception:
+            status['database_connection'] = "⚠️ Disconnected"
+            status['mongodb_url'] = "⚠️ Configured, database disconnected"
+    else:
+        status['database_connection'] = "⏳ Not connected yet"
     
     return {"api_keys_status": status}
 
@@ -407,7 +522,7 @@ Return ONLY valid JSON, no markdown formatting."""
             )
             
     except openai.APIError as e:
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+        raise_openai_http_error(e, "OpenAI")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating product: {str(e)}")
 
@@ -500,7 +615,7 @@ async def generate_image_with_dalle(request: AIImageRequest):
         )
         
     except openai.APIError as e:
-        raise HTTPException(status_code=500, detail=f"DALL-E API error: {str(e)}")
+        raise_openai_http_error(e, "DALL-E")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating image: {str(e)}")
 
@@ -584,7 +699,7 @@ async def generate_full_product(request: FullProductGenerationRequest):
 async def get_dashboard_stats():
     """Get overall dashboard statistics"""
     try:
-        if not db:
+        if db is None:
             return DashboardStats(
                 total_products=0,
                 products_today=0,
@@ -632,6 +747,15 @@ async def get_dashboard_stats():
             active_opportunities=active_opportunities
         )
     except Exception as e:
+        if is_database_query_error(e):
+            return DashboardStats(
+                total_products=0,
+                products_today=0,
+                total_revenue=0.0,
+                revenue_today=0.0,
+                pending_tasks=0,
+                active_opportunities=0
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -663,6 +787,9 @@ async def create_product(product_input: ProductCreate):
 async def get_products(limit: int = 50, status: Optional[str] = None):
     """Get all products with optional filtering"""
     try:
+        if db is None:
+            return []
+
         query = {}
         if status:
             query["status"] = status
@@ -676,6 +803,8 @@ async def get_products(limit: int = 50, status: Optional[str] = None):
         
         return products
     except Exception as e:
+        if is_database_query_error(e):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -736,6 +865,9 @@ async def create_opportunity(opportunity_input: OpportunityCreate):
 async def get_opportunities(limit: int = 20):
     """Get all opportunities"""
     try:
+        if db is None:
+            return []
+
         opportunities = await db.opportunities.find({}, {"_id": 0}).sort("trend_score", -1).limit(limit).to_list(limit)
         
         for opp in opportunities:
@@ -744,6 +876,8 @@ async def get_opportunities(limit: int = 20):
         
         return opportunities
     except Exception as e:
+        if is_database_query_error(e):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1227,6 +1361,9 @@ async def get_revenue_recommendations(limit: int = 1):
 async def get_social_posts(product_id: Optional[str] = None, limit: int = 20):
     """Get scheduled social media posts"""
     try:
+        if db is None:
+            return []
+
         query = {}
         if product_id:
             query["product_id"] = product_id
@@ -1234,6 +1371,8 @@ async def get_social_posts(product_id: Optional[str] = None, limit: int = 20):
         posts = await db.social_media_posts.find(query, {"_id": 0}).sort("scheduled_time", -1).limit(limit).to_list(limit)
         return posts
     except Exception as e:
+        if is_database_query_error(e):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1241,6 +1380,9 @@ async def get_social_posts(product_id: Optional[str] = None, limit: int = 20):
 async def get_launch_campaigns(product_id: Optional[str] = None):
     """Get launch campaigns"""
     try:
+        if db is None:
+            return []
+
         query = {}
         if product_id:
             query["product_id"] = product_id
@@ -1248,6 +1390,8 @@ async def get_launch_campaigns(product_id: Optional[str] = None):
         campaigns = await db.launch_campaigns.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
         return campaigns
     except Exception as e:
+        if is_database_query_error(e):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1405,6 +1549,39 @@ async def get_compliance_checks(product_id: Optional[str] = None, limit: int = 2
 async def get_business_insights():
     """Get AI-powered business insights and predictions"""
     try:
+        if db is None:
+            return {
+                "success": True,
+                "insights": {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "product_performance": {
+                        "top_performers": [],
+                        "underperformers": [],
+                        "rising_stars": [],
+                        "average_metrics": {}
+                    },
+                    "revenue_forecast": {
+                        "current_month": 0,
+                        "next_month": 0,
+                        "next_quarter": 0,
+                        "next_year": 0,
+                        "growth_rate": 0,
+                        "confidence": "low",
+                        "assumptions": ["Database not available"]
+                    },
+                    "opportunity_analysis": {"status": "no_data"},
+                    "recommendations": [],
+                    "kpis": {
+                        "total_revenue": 0,
+                        "total_conversions": 0,
+                        "conversion_rate": 0,
+                        "average_order_value": 0,
+                        "total_products": 0,
+                        "products_published": 0
+                    }
+                }
+            }
+
         # Get data
         products = await db.products.find({}, {"_id": 0}).to_list(100)
         opportunities = await db.opportunities.find({}, {"_id": 0}).to_list(100)
@@ -1424,6 +1601,38 @@ async def get_business_insights():
             "insights": insights
         }
     except Exception as e:
+        if is_database_query_error(e):
+            return {
+                "success": True,
+                "insights": {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "product_performance": {
+                        "top_performers": [],
+                        "underperformers": [],
+                        "rising_stars": [],
+                        "average_metrics": {}
+                    },
+                    "revenue_forecast": {
+                        "current_month": 0,
+                        "next_month": 0,
+                        "next_quarter": 0,
+                        "next_year": 0,
+                        "growth_rate": 0,
+                        "confidence": "low",
+                        "assumptions": ["Database authentication failed"]
+                    },
+                    "opportunity_analysis": {"status": "no_data"},
+                    "recommendations": [],
+                    "kpis": {
+                        "total_revenue": 0,
+                        "total_conversions": 0,
+                        "conversion_rate": 0,
+                        "average_order_value": 0,
+                        "total_products": 0,
+                        "products_published": 0
+                    }
+                }
+            }
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1431,12 +1640,18 @@ async def get_business_insights():
 async def get_system_health():
     """Get system health status"""
     try:
+        current_mongo_url = resolve_raw_mongo_url() or mongo_url
+        supported_mongo_url = resolve_mongo_url() or mongo_url
+        database_status = "connected" if db is not None else "unavailable"
+        if current_mongo_url and not is_supported_mongo_url(current_mongo_url):
+            database_status = "misconfigured"
+
         # Check all systems
         health = {
             "status": "healthy",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {
-                "database": "connected" if db is not None else "unavailable (demo mode)",
+                "database": database_status,
                 "ai_teams": "operational",
                 "automation": "operational",
                 "marketplaces": "operational"
@@ -1444,15 +1659,36 @@ async def get_system_health():
         }
         
         # Only count documents if database is available
-        if db is not None:
+        if current_mongo_url and not is_supported_mongo_url(current_mongo_url):
+            health["status"] = "degraded"
             health["stats"] = {
-                "total_products": await db.products.count_documents({}),
-                "total_opportunities": await db.opportunities.count_documents({}),
-                "pending_tasks": await db.ai_tasks.count_documents({"status": "pending"}),
-                "marketplace_listings": await db.marketplace_listings.count_documents({})
+                "mode": "degraded",
+                "note": "Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint"
             }
+        elif db is not None and supported_mongo_url:
+            try:
+                health["stats"] = {
+                    "total_products": await db.products.count_documents({}),
+                    "total_opportunities": await db.opportunities.count_documents({}),
+                    "pending_tasks": await db.ai_tasks.count_documents({"status": "pending"}),
+                    "marketplace_listings": await db.marketplace_listings.count_documents({})
+                }
+            except Exception as db_error:
+                if not is_database_query_error(db_error):
+                    raise
+
+                health["status"] = "degraded"
+                health["services"]["database"] = "disconnected"
+                health["db_error"] = str(db_error)
+                health["stats"] = {
+                    "total_products": 0,
+                    "total_opportunities": 0,
+                    "pending_tasks": 0,
+                    "marketplace_listings": 0
+                }
         else:
-            health["stats"] = {"mode": "demo", "note": "No persistent storage"}
+            health["status"] = "degraded"
+            health["stats"] = {"mode": "degraded", "note": "No persistent storage configured"}
         
         return health
     except Exception as e:
@@ -1815,6 +2051,213 @@ async def publish_to_gumroad(product_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============ GUMROAD COMPREHENSIVE ENDPOINTS ============
+
+@api_router.get("/gumroad/status")
+async def get_gumroad_status():
+    """Get Gumroad connection status and account info"""
+    try:
+        result = await gumroad_publisher.get_account_info()
+        return {
+            "status": "connected" if result else "disconnected",
+            "account": result,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@api_router.post("/gumroad/create-product")
+async def create_gumroad_product(
+    product_data: Dict[str, Any]
+):
+    """Create a brand new product on Gumroad"""
+    try:
+        result = await gumroad_publisher.create_product(product_data)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.put("/gumroad/{gumroad_product_id}/update")
+async def update_gumroad_product(
+    gumroad_product_id: str,
+    updates: Dict[str, Any]
+):
+    """Update an existing Gumroad product"""
+    try:
+        result = await gumroad_publisher.update_product(gumroad_product_id, updates)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/gumroad/{gumroad_product_id}")
+async def delete_gumroad_product(gumroad_product_id: str):
+    """Delete a Gumroad product"""
+    try:
+        result = await gumroad_publisher.delete_product(gumroad_product_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/gumroad/{gumroad_product_id}")
+async def get_gumroad_product_details(gumroad_product_id: str):
+    """Get detailed information about a Gumroad product"""
+    try:
+        result = await gumroad_publisher.get_product_details(gumroad_product_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/gumroad/{gumroad_product_id}/upload-file")
+async def upload_file_to_gumroad(
+    gumroad_product_id: str,
+    file_path: str,
+    file_name: Optional[str] = None
+):
+    """Upload a digital file to a Gumroad product"""
+    try:
+        result = await gumroad_publisher.upload_product_file(
+            gumroad_product_id,
+            file_path,
+            file_name
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/gumroad/{gumroad_product_id}/analytics")
+async def get_gumroad_product_analytics(
+    gumroad_product_id: str,
+    period: str = "30_days"
+):
+    """Get analytics for a Gumroad product"""
+    try:
+        result = await gumroad_publisher.get_product_analytics(
+            gumroad_product_id,
+            period
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/gumroad/analytics/summary")
+async def get_gumroad_analytics_summary():
+    """Get overall Gumroad account analytics"""
+    try:
+        result = await gumroad_publisher.get_account_analytics()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/gumroad/{gumroad_product_id}/variant")
+async def create_product_variant(
+    gumroad_product_id: str,
+    variant_data: Dict[str, Any]
+):
+    """Create a product variant (license tier, option, etc)"""
+    try:
+        result = await gumroad_publisher.create_variant(
+            gumroad_product_id,
+            variant_data
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/gumroad/{gumroad_product_id}/license")
+async def get_license_info(gumroad_product_id: str):
+    """Get license info for a Gumroad product"""
+    try:
+        result = await gumroad_publisher.get_license_info(gumroad_product_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/gumroad/{product_id}/sync-from-app")
+async def sync_product_to_gumroad(product_id: str):
+    """Sync a product from this app to Gumroad (from local database)"""
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        # Fetch product from local DB
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # If product already on Gumroad, update it
+        if product.get("gumroad_id"):
+            result = await gumroad_publisher.update_product(
+                product.get("gumroad_id"),
+                product
+            )
+        else:
+            # Create new Gumroad product
+            result = await gumroad_publisher.create_product(product)
+            
+            # Update local DB with Gumroad ID
+            if result.get("success"):
+                await db.products.update_one(
+                    {"id": product_id},
+                    {"$set": {"gumroad_id": result.get("gumroad_product_id")}}
+                )
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/{product_id}/publish-all-platforms")
+async def publish_product_all_platforms(
+    product_id: str,
+    platforms: List[str] = ["gumroad", "tiktok"]
+):
+    """Publish a product to multiple platforms simultaneously"""
+    try:
+        results = {}
+        product_data = {}
+        
+        # Get product from DB if available
+        if db is not None:
+            db_product = await db.products.find_one({"id": product_id}, {"_id": 0})
+            if db_product:
+                product_data = db_product
+        
+        # Publish to each platform
+        if "gumroad" in platforms:
+            results["gumroad"] = await gumroad_publisher.create_product(product_data)
+        
+        if "tiktok" in platforms:
+            integration = get_product_tiktok_integration()
+            results["tiktok"] = await integration.post_product_series_to_tiktok(product_data, series_count=5)
+        
+        if "etsy" in platforms:
+            etsy_manager = get_etsy_manager()
+            results["etsy"] = await etsy_manager.create_listing(product_data)
+        
+        return {
+            "status": "success",
+            "product_id": product_id,
+            "platforms_published": list(results.keys()),
+            "results": results,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============ YOUTUBE SHORTS & SOCIAL AUTOMATION ============
 
 class YouTubeShortsRequest(BaseModel):
@@ -1916,7 +2359,11 @@ async def create_social_campaign(request: SocialCampaignRequest):
         
         # Save campaign
         if db is not None:
-            await db.social_campaigns.insert_one(campaign)
+            try:
+                await db.social_campaigns.insert_one(campaign)
+            except Exception as db_error:
+                if not is_database_query_error(db_error):
+                    raise
         
         return {
             "success": True,
@@ -1941,6 +2388,8 @@ async def get_social_campaigns(product_id: Optional[str] = None):
         campaigns = await db.social_campaigns.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
         return {"success": True, "campaigns": campaigns}
     except Exception as e:
+        if is_database_query_error(e):
+            return {"success": True, "campaigns": [], "note": "Database unavailable"}
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2002,7 +2451,7 @@ async def schedule_multi_platform_posts(request: ScheduleMultiPlatformRequest):
         )
         
         # Store in database if available
-        if db:
+        if db is not None:
             schedule_doc = {
                 "id": f"schedule-{uuid.uuid4().hex[:8]}",
                 "scheduled_posts": scheduled["schedule"],
@@ -2010,7 +2459,11 @@ async def schedule_multi_platform_posts(request: ScheduleMultiPlatformRequest):
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "status": "scheduled"
             }
-            await db.social_schedules.insert_one(schedule_doc)
+            try:
+                await db.social_schedules.insert_one(schedule_doc)
+            except Exception as db_error:
+                if not is_database_query_error(db_error):
+                    raise
         
         return {
             "success": True,
@@ -2113,6 +2566,342 @@ async def post_to_youtube(content: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# TikTok-specific operations
+
+@api_router.post("/social/tiktok/edit")
+async def edit_tiktok_video(video_id: str, updates: Dict[str, Any]):
+    """Edit an existing TikTok video"""
+    try:
+        result = await PlatformIntegration.edit_tiktok_video(video_id, updates)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/social/tiktok/schedule")
+async def schedule_tiktok_post(content: Dict[str, Any], schedule_time: str):
+    """Schedule a TikTok post for a future time"""
+    try:
+        result = await PlatformIntegration.schedule_tiktok_post(content, schedule_time)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/social/tiktok/{video_id}")
+async def delete_tiktok_video(video_id: str):
+    """Delete a TikTok video"""
+    try:
+        result = await PlatformIntegration.delete_tiktok_video(video_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/social/tiktok/analytics/{video_id}")
+async def get_tiktok_video_analytics(video_id: str):
+    """Get analytics for a specific TikTok video"""
+    try:
+        result = await PlatformIntegration.get_tiktok_video_analytics(video_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/social/tiktok/analytics/channel/summary")
+async def get_tiktok_channel_analytics(period_days: int = 30):
+    """Get overall TikTok channel analytics"""
+    try:
+        result = await PlatformIntegration.get_tiktok_channel_analytics(period_days)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/social/tiktok/comments/{video_id}")
+async def moderate_tiktok_comments(video_id: str, action: str = "get"):
+    """Moderate comments on a TikTok video (get, delete, hide, pin, report)"""
+    try:
+        result = await PlatformIntegration.moderate_tiktok_comments(video_id, action)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/social/tiktok/trending/sounds")
+async def get_tiktok_trending_sounds(limit: int = 10):
+    """Get trending TikTok sounds for content creation"""
+    try:
+        result = await PlatformIntegration.get_tiktok_trending_sounds()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/social/tiktok/trending/hashtags")
+async def get_tiktok_trending_hashtags(limit: int = 10):
+    """Get trending TikTok hashtags for content creation"""
+    try:
+        result = await PlatformIntegration.get_tiktok_trending_hashtags()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Product + TikTok Integration ====================
+
+@api_router.post("/products/{product_id}/post-tiktok")
+async def post_product_to_tiktok(
+    product_id: str,
+    product_data: Dict[str, Any],
+    video_file: Optional[str] = None,
+    auto_generate_caption: bool = True
+):
+    """Post a created product to TikTok"""
+    try:
+        integration = get_product_tiktok_integration()
+        result = await integration.post_product_to_tiktok(
+            product_data,
+            video_file=video_file,
+            auto_generate_caption=auto_generate_caption
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/{product_id}/post-tiktok-series")
+async def post_product_series_to_tiktok(
+    product_id: str,
+    product_data: Dict[str, Any],
+    series_count: int = 5
+):
+    """Post a series of videos for a product (5-10 videos)"""
+    try:
+        integration = get_product_tiktok_integration()
+        result = await integration.post_product_series_to_tiktok(
+            product_data,
+            series_count=series_count
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/{product_id}/schedule-tiktok")
+async def schedule_product_tiktok_posts(
+    product_id: str,
+    product_data: Dict[str, Any],
+    schedule_dates: List[str]
+):
+    """Schedule product posts to TikTok for specific dates"""
+    try:
+        integration = get_product_tiktok_integration()
+        result = await integration.schedule_product_posts(
+            product_data,
+            schedule_dates
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Etsy Integration ====================
+
+@api_router.post("/products/{product_id}/post-etsy")
+async def create_etsy_listing(
+    product_id: str,
+    product_data: Dict[str, Any]
+):
+    """Create an Etsy listing from a product"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.create_listing(product_data)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/etsy/listing/{listing_id}/update")
+async def update_etsy_listing(
+    listing_id: str,
+    updates: Dict[str, Any]
+):
+    """Update an Etsy listing"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.update_listing(listing_id, updates)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/etsy/listing/{listing_id}")
+async def delete_etsy_listing(listing_id: str):
+    """Delete an Etsy listing"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.delete_listing(listing_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/etsy/listing/{listing_id}/analytics")
+async def get_etsy_listing_analytics(listing_id: str):
+    """Get analytics for an Etsy listing"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.get_listing_analytics(listing_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/etsy/analytics/shop")
+async def get_etsy_shop_analytics(period_days: int = 30):
+    """Get shop-wide Etsy analytics"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.get_shop_analytics(period_days)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/etsy/inventory/{listing_id}")
+async def update_etsy_inventory(
+    listing_id: str,
+    quantity: int
+):
+    """Update Etsy listing inventory"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.manage_inventory(listing_id, quantity)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/etsy/listings")
+async def list_etsy_shop_listings(limit: int = 20):
+    """List all Etsy shop listings"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.list_shop_listings(limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/etsy/categories/trending")
+async def get_etsy_trending_categories():
+    """Get trending Etsy categories"""
+    try:
+        etsy = get_etsy_manager()
+        result = await etsy.get_trending_categories()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Gemini/Google AI Integration ====================
+
+@api_router.get("/ai/gemini/status")
+async def get_gemini_status():
+    """Get Gemini API status"""
+    try:
+        gemini = get_gemini_manager()
+        return gemini.get_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/ai/gemini/generate")
+async def generate_with_gemini(
+    prompt: str,
+    model: str = "gemini-pro",
+    temperature: float = 0.7,
+    max_tokens: int = 2048
+):
+    """Generate content using Gemini"""
+    try:
+        gemini = get_gemini_manager()
+        result = await gemini.generate_content(
+            prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        return {
+            "status": "success" if result else "error",
+            "content": result,
+            "model": model
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/{product_id}/generate-etsy-description")
+async def generate_etsy_product_description(
+    product_id: str,
+    product_data: Dict[str, Any]
+):
+    """Generate Etsy product description using Gemini"""
+    try:
+        gemini = get_gemini_manager()
+        description = await gemini.generate_product_description(product_data)
+        return {
+            "status": "success" if description else "error",
+            "description": description,
+            "product_id": product_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/{product_id}/generate-etsy-tags")
+async def generate_etsy_tags(
+    product_id: str,
+    product_data: Dict[str, Any]
+):
+    """Generate Etsy search tags using Gemini"""
+    try:
+        gemini = get_gemini_manager()
+        tags = await gemini.generate_etsy_tags(product_data)
+        return {
+            "status": "success" if tags else "error",
+            "tags": tags or [],
+            "tag_count": len(tags) if tags else 0,
+            "product_id": product_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/products/generate-etsy-title")
+async def generate_etsy_title(
+    product_type: str,
+    key_features: List[str],
+    target_keywords: List[str] = []
+):
+    """Generate SEO-optimized Etsy title using Gemini"""
+    try:
+        gemini = get_gemini_manager()
+        title = await gemini.generate_product_title(
+            product_type,
+            key_features,
+            target_keywords
+        )
+        return {
+            "status": "success" if title else "error",
+            "title": title,
+            "character_count": len(title) if title else 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.get("/social/platforms")
 async def get_all_social_platforms():
     """Get list of all supported social media platforms with details"""
@@ -2183,41 +2972,45 @@ async def get_realtime_analytics():
         }
         
         if db is not None:
-            # Product stats
-            analytics["products"]["total"] = await db.products.count_documents({})
-            analytics["products"]["published"] = await db.products.count_documents({"status": "published"})
-            analytics["products"]["draft"] = await db.products.count_documents({"status": "draft"})
-            
-            # Revenue aggregation
-            pipeline = [
-                {"$group": {
-                    "_id": None,
-                    "total_revenue": {"$sum": "$revenue"},
-                    "total_clicks": {"$sum": "$clicks"},
-                    "total_conversions": {"$sum": "$conversions"}
-                }}
-            ]
-            result = await db.products.aggregate(pipeline).to_list(1)
-            if result:
-                analytics["revenue"]["total"] = result[0].get("total_revenue", 0)
-                analytics["traffic"]["clicks"] = result[0].get("total_clicks", 0)
-                analytics["traffic"]["conversions"] = result[0].get("total_conversions", 0)
-                if analytics["traffic"]["clicks"] > 0:
-                    analytics["traffic"]["conversion_rate"] = round(
-                        analytics["traffic"]["conversions"] / analytics["traffic"]["clicks"] * 100, 2
-                    )
-            
-            # Top products
-            top_products = await db.products.find(
-                {}, {"_id": 0, "id": 1, "title": 1, "revenue": 1, "conversions": 1}
-            ).sort("revenue", -1).limit(5).to_list(5)
-            analytics["top_products"] = top_products
+            try:
+                analytics["products"]["total"] = await db.products.count_documents({})
+                analytics["products"]["published"] = await db.products.count_documents({"status": "published"})
+                analytics["products"]["draft"] = await db.products.count_documents({"status": "draft"})
+                
+                pipeline = [
+                    {"$group": {
+                        "_id": None,
+                        "total_revenue": {"$sum": "$revenue"},
+                        "total_clicks": {"$sum": "$clicks"},
+                        "total_conversions": {"$sum": "$conversions"}
+                    }}
+                ]
+                result = await db.products.aggregate(pipeline).to_list(1)
+                if result:
+                    analytics["revenue"]["total"] = result[0].get("total_revenue", 0)
+                    analytics["traffic"]["clicks"] = result[0].get("total_clicks", 0)
+                    analytics["traffic"]["conversions"] = result[0].get("total_conversions", 0)
+                    if analytics["traffic"]["clicks"] > 0:
+                        analytics["traffic"]["conversion_rate"] = round(
+                            analytics["traffic"]["conversions"] / analytics["traffic"]["clicks"] * 100, 2
+                        )
+                
+                top_products = await db.products.find(
+                    {}, {"_id": 0, "id": 1, "title": 1, "revenue": 1, "conversions": 1}
+                ).sort("revenue", -1).limit(5).to_list(5)
+                analytics["top_products"] = top_products
+            except Exception as db_error:
+                if not is_database_query_error(db_error):
+                    raise
+                analytics["database_status"] = "disconnected"
         
-        # Check Gumroad connection
-        gumroad_products = await gumroad_publisher.get_products()
-        if gumroad_products.get("success"):
-            analytics["gumroad"]["connected"] = True
-            analytics["gumroad"]["products"] = len(gumroad_products.get("products", []))
+        try:
+            gumroad_products = await gumroad_publisher.get_products()
+            if gumroad_products.get("success"):
+                analytics["gumroad"]["connected"] = True
+                analytics["gumroad"]["products"] = len(gumroad_products.get("products", []))
+        except Exception:
+            analytics["gumroad"]["connected"] = False
         
         return analytics
     except Exception as e:
@@ -2235,20 +3028,24 @@ async def get_revenue_breakdown():
         }
         
         if db is not None:
-            # By product type
-            pipeline = [
-                {"$group": {
-                    "_id": "$product_type",
-                    "revenue": {"$sum": "$revenue"},
-                    "count": {"$sum": 1}
-                }}
-            ]
-            by_type = await db.products.aggregate(pipeline).to_list(10)
-            for item in by_type:
-                breakdown["by_product_type"][item["_id"] or "unknown"] = {
-                    "revenue": item["revenue"],
-                    "count": item["count"]
-                }
+            try:
+                pipeline = [
+                    {"$group": {
+                        "_id": "$product_type",
+                        "revenue": {"$sum": "$revenue"},
+                        "count": {"$sum": 1}
+                    }}
+                ]
+                by_type = await db.products.aggregate(pipeline).to_list(10)
+                for item in by_type:
+                    breakdown["by_product_type"][item["_id"] or "unknown"] = {
+                        "revenue": item["revenue"],
+                        "count": item["count"]
+                    }
+            except Exception as db_error:
+                if not is_database_query_error(db_error):
+                    raise
+                breakdown["database_status"] = "disconnected"
         
         # Generate projections
         total_revenue = sum(t.get("revenue", 0) for t in breakdown["by_product_type"].values())
@@ -2668,6 +3465,8 @@ async def get_app_description():
 async def health():
     """Health check endpoint for deployment monitoring"""
     try:
+        current_mongo_url = resolve_raw_mongo_url() or mongo_url
+        supported_mongo_url = resolve_mongo_url() or mongo_url
         response = {
             "status": "healthy",
             "environment": os.environ.get('ENVIRONMENT', 'development'),
@@ -2675,15 +3474,21 @@ async def health():
         }
         
         # Test MongoDB connection if available
-        if db is not None:
+        if current_mongo_url and not is_supported_mongo_url(current_mongo_url):
+            response["status"] = "degraded"
+            response["database"] = "misconfigured"
+            response["db_error"] = "Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint"
+        elif client is not None and supported_mongo_url:
             try:
-                await db.admin.command('ping')
+                await client.admin.command('ping')
                 response["database"] = "connected"
             except Exception as db_error:
+                response["status"] = "degraded"
                 response["database"] = "disconnected"
                 response["db_error"] = str(db_error)
         else:
-            response["database"] = "not configured (demo mode)"
+            response["status"] = "degraded"
+            response["database"] = "not configured"
         
         return response
     except Exception as e:
@@ -2858,7 +3663,7 @@ async def create_notification(request: NotificationRequest):
         }
         
         # Store in database if available
-        if db:
+        if db is not None:
             await db.notifications.insert_one(notification)
         
         return NotificationResponse(
@@ -2875,7 +3680,7 @@ async def create_notification(request: NotificationRequest):
 async def get_notifications(recipient_id: str, limit: int = 20, unread_only: bool = False):
     """Get notifications for a user"""
     try:
-        if not db:
+        if db is None:
             return {"notifications": [], "total": 0}
         
         query = {"recipient_id": recipient_id}
@@ -2898,7 +3703,7 @@ async def get_notifications(recipient_id: str, limit: int = 20, unread_only: boo
 async def mark_notification_read(notification_id: str):
     """Mark a notification as read"""
     try:
-        if not db:
+        if db is None:
             return {"status": "database_not_available"}
         
         result = await db.notifications.update_one(
@@ -2921,7 +3726,7 @@ async def mark_notification_read(notification_id: str):
 async def send_product_notification(product_id: str, to_email: str):
     """Send email notification when product is ready (recommended for workflow)"""
     try:
-        if not db:
+        if db is None:
             raise HTTPException(status_code=400, detail="Database not available")
         
         # Get product from database
@@ -3014,7 +3819,7 @@ async def create_stripe_checkout(request: StripeCheckoutRequest):
         stripe.api_key = stripe_key
         
         # Get product details
-        if not db:
+        if db is None:
             raise HTTPException(status_code=400, detail="Database not available")
         
         product = await db.products.find_one({"id": request.product_id}, {"_id": 0})
@@ -3096,7 +3901,7 @@ async def handle_stripe_webhook(request: dict):
             metadata = request.get('data', {}).get('object', {}).get('metadata', {})
             
             # Update payment record
-            if db:
+            if db is not None:
                 await db.payments.update_one(
                     {"stripe_session_id": session_id},
                     {
@@ -3151,7 +3956,7 @@ async def handle_stripe_webhook(request: dict):
 async def get_product_payment_stats(product_id: str):
     """Get payment statistics for a product"""
     try:
-        if not db:
+        if db is None:
             raise HTTPException(status_code=400, detail="Database not available")
         
         # Get product
@@ -3192,7 +3997,7 @@ async def get_product_payment_stats(product_id: str):
 async def get_all_payment_stats():
     """Get overall payment statistics"""
     try:
-        if not db:
+        if db is None:
             return {
                 "total_revenue": 0,
                 "total_sales": 0,

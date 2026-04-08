@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
 import base64
 import hashlib
+from pathlib import Path
 
 
 class KeysManager:
@@ -23,7 +24,34 @@ class KeysManager:
             ).decode()
         
         self.cipher = Fernet(master_key.encode() if isinstance(master_key, str) else master_key)
+        self.storage_path = Path(__file__).resolve().parent / '.secure_keys.json'
         self.keys_cache: Dict[str, str] = {}
+        self._load_persisted_keys()
+
+    def _read_persisted_keys(self) -> Dict[str, str]:
+        if not self.storage_path.exists():
+            return {}
+
+        try:
+            with self.storage_path.open('r', encoding='utf-8') as storage_file:
+                stored = json.load(storage_file)
+        except Exception:
+            return {}
+
+        return stored if isinstance(stored, dict) else {}
+
+    def _write_persisted_keys(self, encrypted_keys: Dict[str, str]):
+        with self.storage_path.open('w', encoding='utf-8') as storage_file:
+            json.dump(encrypted_keys, storage_file, indent=2)
+
+    def _load_persisted_keys(self):
+        encrypted_keys = self._read_persisted_keys()
+
+        for key_name, encrypted_value in encrypted_keys.items():
+            try:
+                self.keys_cache[key_name] = self.decrypt_key(encrypted_value)
+            except ValueError:
+                continue
     
     def encrypt_key(self, key: str) -> str:
         """Encrypt an API key"""
@@ -52,15 +80,21 @@ class KeysManager:
             'mongodb_url': '...'
         }
         """
-        encrypted_keys = {}
+        encrypted_keys = self._read_persisted_keys()
+        stored_keys = {}
         for key_name, key_value in keys_data.items():
             if key_value:
                 encrypted = self.encrypt_key(key_value)
                 encrypted_keys[key_name] = encrypted
+                stored_keys[key_name] = encrypted
                 # Also cache in memory
                 self.keys_cache[key_name] = key_value
+                os.environ[key_name.upper()] = key_value
+
+        if stored_keys:
+            self._write_persisted_keys(encrypted_keys)
         
-        return encrypted_keys
+        return stored_keys
     
     def get_key(self, key_name: str) -> Optional[str]:
         """Retrieve a key from cache or decrypt it"""
@@ -80,9 +114,7 @@ class KeysManager:
     def set_key(self, key_name: str, key_value: str):
         """Set a key in cache"""
         if key_value:
-            self.keys_cache[key_name] = key_value
-            # Also set in environment for subprocess calls
-            os.environ[key_name.upper()] = key_value
+            self.store_keys({key_name: key_value})
 
 
 # Global instance

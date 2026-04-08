@@ -1,8 +1,44 @@
 import React, { useState, useEffect } from 'react';
-
-const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 import { Package, Clock, TrendingUp, Zap, Image, Loader, Check, X } from 'lucide-react';
 import './Pages.css';
+
+const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+const readErrorMessage = async (response, fallbackMessage) => {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === 'string' && data.detail.trim()) {
+      return data.detail;
+    }
+    if (typeof data?.message === 'string' && data.message.trim()) {
+      return data.message;
+    }
+  } catch {
+    // Ignore JSON parse failures and fall back to text/default handling.
+  }
+
+  try {
+    const text = await response.text();
+    if (text.trim()) {
+      return text;
+    }
+  } catch {
+    // Ignore text parse failures and use the fallback message.
+  }
+
+  return fallbackMessage;
+};
+
+const formatIntegrationError = (message) => {
+  const normalizedMessage = String(message || '');
+  const loweredMessage = normalizedMessage.toLowerCase();
+
+  if (loweredMessage.includes('insufficient_quota') || loweredMessage.includes('quota exceeded')) {
+    return 'OpenAI is configured, but this API key has no available quota. Update billing or replace the key, then try again.';
+  }
+
+  return normalizedMessage;
+};
 
 const ProductsPage = () => {
   const [products, setProducts] = useState([]);
@@ -62,8 +98,8 @@ const ProductsPage = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Generation failed');
+        const errorMessage = await readErrorMessage(response, 'Generation failed');
+        throw new Error(formatIntegrationError(errorMessage));
       }
 
       const result = await response.json();
@@ -107,7 +143,8 @@ const ProductsPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create checkout');
+        const errorMessage = await readErrorMessage(response, 'Failed to create checkout');
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();

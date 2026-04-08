@@ -4,6 +4,13 @@ import './Pages.css';
 
 const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
 const Dashboard = () => {
   const [dashboardStats, setDashboardStats] = useState(null);
   const [paymentStats, setPaymentStats] = useState(null);
@@ -66,10 +73,30 @@ const Dashboard = () => {
   ];
 
   const recentActivity = [
-    { time: 'Just now', action: 'Dashboard data updated', status: 'success' },
-    { time: '1 min ago', action: 'Backend systems connected', status: 'success' },
-    { time: '5 mins ago', action: 'Monitoring active', status: 'in-progress' },
-    { time: 'Ready', action: 'All systems operational and synced', status: 'info' }
+    {
+      time: loading ? 'Refreshing' : 'Just now',
+      action: loading ? 'Refreshing live factory metrics' : 'Loaded live dashboard metrics from the backend',
+      status: loading ? 'info' : 'success'
+    },
+    {
+      time: dashboardStats ? 'Live' : 'Waiting',
+      action: dashboardStats
+        ? `${dashboardStats.total_products || 0} products and ${dashboardStats.active_opportunities || 0} opportunities currently tracked`
+        : 'Waiting for the dashboard service to respond',
+      status: dashboardStats ? 'success' : 'info'
+    },
+    {
+      time: paymentStats ? 'Live' : 'Waiting',
+      action: paymentStats
+        ? `${paymentStats.total_sales || 0} sales recorded for ${currencyFormatter.format(paymentStats.total_revenue || 0)} total revenue`
+        : 'Waiting for the payments service to respond',
+      status: paymentStats ? 'success' : 'info'
+    },
+    {
+      time: error ? 'Action needed' : 'Healthy',
+      action: error ? `Dashboard sync issue: ${error}` : 'No demo data shown here; all values are backend-driven',
+      status: error ? 'warning' : 'info'
+    }
   ];
 
   return (
@@ -135,8 +162,8 @@ const Dashboard = () => {
             <p>
               {dashboardStats ? (
                 <>
-                  {dashboardStats.total_products} products | {paymentStats?.total_sales || 0} sales |
-                  ${(paymentStats?.total_revenue || 0).toFixed(2)} revenue
+                  {dashboardStats.total_products || 0} products | {paymentStats?.total_sales || 0} sales |
+                  {currencyFormatter.format(paymentStats?.total_revenue || 0)} revenue
                 </>
               ) : (
                 'Loading system stats...'
