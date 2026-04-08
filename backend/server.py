@@ -103,15 +103,15 @@ if mongo_url:
         # Verify connection works
         db_name = resolve_db_name()
         db = client[db_name]
-        print(f"✅ MongoDB connected to {db_name}")
+        print(f"[OK] MongoDB connected to {db_name}")
     except Exception as e:
-        print(f"⚠️  Warning: Could not connect to MongoDB immediately: {e}")
-        print("⏳ Will try to reconnect on first request...")
+        print(f"[WARN] Could not connect to MongoDB immediately: {e}")
+        print("[INFO] Will try to reconnect on first request...")
         db = None
         client = None
 else:
     if raw_mongo_url:
-        print("⚠️  Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint. Persistent storage disabled.")
+        print("[WARN] Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint. Persistent storage disabled.")
     else:
         print("ℹ️  MongoDB URL not available. Persistent storage disabled.")
 
@@ -4097,3 +4097,18 @@ logger = logging.getLogger(__name__)
 async def shutdown_db_client():
     if client:
         client.close()
+
+# Start the server
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get('PORT', 8000))
+    print(f"[INFO] Starting FastAPI server on http://0.0.0.0:{port}")
+    print(f"[INFO] API Docs: http://0.0.0.0:{port}/docs")
+    print(f"[INFO] ReDoc: http://0.0.0.0:{port}/redoc")
+    uvicorn.run(
+        "server:app",
+        host="0.0.0.0",
+        port=port,
+        reload=os.environ.get('ENVIRONMENT') != 'production',
+        log_level="info"
+    )

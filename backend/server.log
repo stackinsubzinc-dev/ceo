@@ -1,0 +1,12 @@
+[OK] MongoDB connected to ceo_ai
+[INFO] Starting FastAPI server on http://0.0.0.0:8000
+[INFO] API Docs: http://0.0.0.0:8000/docs
+[INFO] ReDoc: http://0.0.0.0:8000/redoc
+[OK] MongoDB connected to ceo_ai
+INFO:     127.0.0.1:53657 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53666 - "POST /products/generate-with-gemini HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53668 - "GET /gumroad/analytics/summary HTTP/1.1" 404 Not Found
+Warning: TikTok credentials not fully configured
+INFO:     127.0.0.1:53670 - "GET /api/social/tiktok/analytics/channel/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53672 - "GET /etsy/analytics HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53676 - "GET /health HTTP/1.1" 200 OK
