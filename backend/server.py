@@ -113,7 +113,7 @@ else:
     if raw_mongo_url:
         print("[WARN] Configured MongoDB URL points to an unsupported Atlas SQL/query endpoint. Persistent storage disabled.")
     else:
-        print("ℹ️  MongoDB URL not available. Persistent storage disabled.")
+        print("[INFO] MongoDB URL not available. Persistent storage disabled.")
 
 
 def is_database_query_error(error: Exception) -> bool:
@@ -375,14 +375,14 @@ async def store_api_keys(keys: APIKeyInput):
                     client = AsyncIOMotorClient(new_mongo_url, serverSelectionTimeoutMS=5000)
                     db = client[resolve_db_name()]
                     mongo_url = new_mongo_url
-                    print("✅ MongoDB reconnected with provided URL")
+                    print("[OK] MongoDB reconnected with provided URL")
                 else:
                     client = None
                     db = None
                     mongo_url = None
-                    print("⚠️  MongoDB connection skipped: unsupported Atlas SQL/query endpoint")
+                    print("[WARN] MongoDB connection skipped: unsupported Atlas SQL/query endpoint")
             except Exception as e:
-                print(f"⚠️  MongoDB connection failed: {e}")
+                print(f"[WARN] MongoDB connection failed: {e}")
         
         return APIKeyResponse(
             status="success",
@@ -414,21 +414,21 @@ async def get_keys_status():
         key_value = keys_manager.get_key(key_name)
         if key_name == 'mongodb_url' and not key_value:
             key_value = current_mongo_url
-        status[key_name] = "✅ Configured" if key_value else "❌ Not configured"
+        status[key_name] = "[OK] Configured" if key_value else "[FAIL] Not configured"
     
     # Report database reachability separately from key storage.
     if current_mongo_url and not is_supported_mongo_url(current_mongo_url):
-        status['database_connection'] = "⚠️ Unsupported connection string"
-        status['mongodb_url'] = "⚠️ Configured, unsupported connection string"
+        status['database_connection'] = "[WARN] Unsupported connection string"
+        status['mongodb_url'] = "[WARN] Configured, unsupported connection string"
     elif client is not None and supported_mongo_url:
         try:
             await client.admin.command('ping')
-            status['database_connection'] = "✅ Connected"
+            status['database_connection'] = "[OK] Connected"
         except Exception:
-            status['database_connection'] = "⚠️ Disconnected"
-            status['mongodb_url'] = "⚠️ Configured, database disconnected"
+            status['database_connection'] = "[WARN] Disconnected"
+            status['mongodb_url'] = "[WARN] Configured, database disconnected"
     else:
-        status['database_connection'] = "⏳ Not connected yet"
+        status['database_connection'] = "[INFO] Not connected yet"
     
     return {"api_keys_status": status}
 
@@ -1713,7 +1713,7 @@ async def run_autonomous_cycle():
         if not autonomous_engine:
             autonomous_engine = AutonomousEngine(db)
         
-        print("\n🚀 Starting autonomous product cycle...")
+        print("\n[START] Starting autonomous product cycle...")
         results = await autonomous_engine.run_autonomous_product_cycle()
         
         return {
@@ -1860,9 +1860,9 @@ class LaunchProductRequest(BaseModel):
 @api_router.post("/launch-product")
 async def launch_product_one_click(request: LaunchProductRequest):
     """
-    🚀 ONE-CLICK LAUNCH: Full Autonomous Cycle
+    ONE-CLICK LAUNCH: Full Autonomous Cycle
     
-    Scout → Generate → Publish to Gumroad → Create Marketing → Track Analytics
+    Scout -> Generate -> Publish to Gumroad -> Create Marketing -> Track Analytics
     
     This is the money-making engine that takes AI from idea to revenue.
     """
@@ -1879,7 +1879,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
         # STAGE 1: Scout Opportunities (if no niche provided)
         niche = request.niche
         if not niche:
-            print("🔍 Stage 1: Scouting opportunities...")
+            print("[SCOUT] Stage 1: Scouting opportunities...")
             opportunities = await opportunity_scout.scout_opportunities()
             if opportunities:
                 # Pick the highest trending opportunity
@@ -1898,7 +1898,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
             results["stages"]["scout"] = {"success": True, "selected_niche": niche, "note": "User provided niche"}
         
         # STAGE 2: Generate Product
-        print(f"📚 Stage 2: Generating {request.product_type} for '{niche}'...")
+        print(f"[GEN] Stage 2: Generating {request.product_type} for '{niche}'...")
         if request.product_type == "ebook":
             product_data = await book_writer.generate_book(
                 niche=niche,
@@ -1929,7 +1929,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
         # STAGE 3: Publish to Gumroad (if enabled)
         gumroad_result = {"success": False, "note": "Auto-publish disabled"}
         if request.auto_publish:
-            print("🛒 Stage 3: Publishing to Gumroad...")
+            print("[PUB] Stage 3: Publishing to Gumroad...")
             if request.product_type == "ebook":
                 gumroad_result = await gumroad_publisher.publish_ebook(product_data)
             else:
@@ -1951,7 +1951,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
         
         # STAGE 4: Generate Social Media Posts (if enabled)
         if request.generate_social:
-            print("📱 Stage 4: Generating social media content...")
+            print("[SOCIAL] Stage 4: Generating social media content...")
             social_posts = await social_media_ai.generate_posts(product_data, num_posts=5)
             results["social_posts"] = social_posts
             results["stages"]["social"] = {
@@ -1960,7 +1960,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
             }
         
         # STAGE 5: Save to Database
-        print("💾 Stage 5: Saving to database...")
+        print("[DB] Stage 5: Saving to database...")
         if db is not None:
             product_doc = product_data.copy()
             product_doc.pop('_id', None)
@@ -1971,7 +1971,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
             results["stages"]["database"] = {"success": True}
         
         # STAGE 6: Generate Analytics Preview
-        print("📊 Stage 6: Generating analytics preview...")
+        print("[ANALYTICS] Stage 6: Generating analytics preview...")
         results["analytics"] = {
             "estimated_monthly_revenue": round(product_data['price'] * random.randint(10, 50), 2),
             "target_audience_size": f"{random.randint(10, 100)}K",
@@ -1981,7 +1981,7 @@ async def launch_product_one_click(request: LaunchProductRequest):
         results["stages"]["analytics"] = {"success": True}
         
         results["success"] = True
-        print("✅ Launch complete!")
+        print("[OK] Launch complete!")
         
         return results
         
@@ -2936,7 +2936,7 @@ async def get_all_social_platforms():
                 },
                 "linkedin": {
                     "name": "LinkedIn",
-                    "icon": "💼",
+                    "icon": "[WORK]",
                     "description": "Professional network",
                     "best_time": "8-10 AM, 12-2 PM",
                     "content_length": "3000 characters",
@@ -3346,11 +3346,11 @@ async def get_app_description():
                     "description": "AI agents continuously scan the market to find trending niches, underserved markets, and profitable opportunities across 6 categories: Digital Products, Content Creation, SaaS Tools, Affiliate Marketing, Automated Services, and Community Building."
                 },
                 {
-                    "name": "📚 Product Creation",
+                    "name": "[PRODUCT] Product Creation",
                     "description": "Generate complete digital products automatically - eBooks, online courses, templates, planners, and more. AI writes content, creates outlines, and prepares everything for publishing."
                 },
                 {
-                    "name": "🚀 One-Click Launch",
+                    "name": "[LAUNCH] One-Click Launch",
                     "description": "Launch products with a single click. The system scouts opportunities, generates the product, prepares marketplace listings, creates marketing content, and sets up social media posts."
                 },
                 {
@@ -3358,11 +3358,11 @@ async def get_app_description():
                     "description": "Create specialized AI teams for each opportunity. Teams include Research, Content, Marketing, and Analytics agents that work together to execute the full product lifecycle."
                 },
                 {
-                    "name": "🛒 Multi-Platform Publishing",
+                    "name": "[SHOP] Multi-Platform Publishing",
                     "description": "Publish to 112+ platforms including Gumroad, Amazon KDP, Etsy, Shopify, Teachable, and more. Automated publishing where APIs allow, step-by-step guides for manual platforms."
                 },
                 {
-                    "name": "📱 Social Media Automation",
+                    "name": "[SOCIAL] Social Media Automation",
                     "description": "Generate and schedule posts across Twitter, Instagram, TikTok, YouTube, LinkedIn, Facebook, and Pinterest. Create YouTube Shorts scripts and full social campaigns."
                 },
                 {
@@ -3378,7 +3378,7 @@ async def get_app_description():
                     "description": "Personal AI assistant that keeps you updated on everything - alerts, recommendations, publishing guides, and status updates."
                 },
                 {
-                    "name": "📊 Analytics & Revenue Tracking",
+                    "name": "[ANALYTICS] Analytics & Revenue Tracking",
                     "description": "Track sales, conversions, revenue across all platforms. AI analyzes data and provides optimization recommendations."
                 }
             ]
