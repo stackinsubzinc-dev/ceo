@@ -374,7 +374,7 @@ async def root():
 async def signup(user_data: UserCreate):
     """Create a new user account"""
     try:
-        if not db:
+        if db is None:
             raise HTTPException(status_code=500, detail="Database connection failed")
         
         users_collection = db['users']
@@ -431,7 +431,7 @@ class LoginRequest(BaseModel):
 async def login(login_data: LoginRequest):
     """Login with email and password"""
     try:
-        if not db:
+        if db is None:
             raise HTTPException(status_code=500, detail="Database connection failed")
         
         users_collection = db['users']
@@ -484,7 +484,7 @@ async def get_current_user(authorization: str = None):
         payload = decode_token(token)
         user_id = payload.get("sub")
         
-        if not db:
+        if db is None:
             raise HTTPException(status_code=500, detail="Database connection failed")
         
         users_collection = db['users']

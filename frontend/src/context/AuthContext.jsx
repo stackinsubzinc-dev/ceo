@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+const API_URL = process.env.REACT_APP_API_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://ceo-1-34jx.onrender.com');
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -15,7 +17,7 @@ export function AuthProvider({ children }) {
       if (storedToken) {
         try {
           // Verify token is still valid by calling /me endpoint
-          const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://ceo-1-34jx.onrender.com'}/api/auth/me`, {
+          const response = await fetch(`${API_URL}/api/auth/me`, {
             headers: {
               'Authorization': `Bearer ${storedToken}`
             }

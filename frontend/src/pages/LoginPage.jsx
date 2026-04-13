@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './AuthPages.css';
 
+const API_URL = process.env.REACT_APP_API_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://ceo-1-34jx.onrender.com');
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,7 +20,7 @@ export default function LoginPage() {
 
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'https://ceo-1-34jx.onrender.com'}/api/auth/login`,
+        `${API_URL}/api/auth/login`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -26,12 +28,13 @@ export default function LoginPage() {
         }
       );
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.detail || 'Login failed');
       }
 
-      const { access_token, user } = await response.json();
+      const { access_token, user } = data;
       login(access_token, user);
       navigate('/');
     } catch (err) {
