@@ -53,6 +53,7 @@ from ai_services.auth_utils import (
 
 # Import core system
 from core.routes import router as core_router
+from core.routes_v5_production import router_v5
 # Note: routes_v2 and routes_v3 are deprecated with missing dependencies
 # Using routes.py and routes_v4_production.py instead
 
@@ -3425,6 +3426,14 @@ async def get_project(project_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/projects/{project_id}/video-prompts")
+async def get_project_video_prompts(project_id: str):
+    """Get reusable video-generation prompts for a project."""
+    try:
+        return await project_manager.get_video_prompts(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.post("/projects/{project_id}/create")
 async def create_project_from_product(project_id: str):
     """Create a project folder for a product"""
@@ -4336,6 +4345,7 @@ async def get_all_payment_stats():
 # Include the router in the main app
 app.include_router(api_router)
 app.include_router(core_router, prefix="/api")
+app.include_router(router_v5)
 
 # Configure CORS
 _cors_env = os.environ.get('CORS_ORIGINS', '')

@@ -47,6 +47,10 @@ class ProjectFileManager:
         readme_file = os.path.join(project_path, "README.md")
         with open(readme_file, "w") as f:
             f.write(readme)
+
+        # Save reusable AI video prompts for this project.
+        prompt_pack = self._build_video_prompt_pack(product)
+        self._write_video_prompt_files(project_path, prompt_pack)
         
         # Save to database
         project_doc = {
@@ -71,6 +75,158 @@ class ProjectFileManager:
             "success": True,
             "project": project_doc
         }
+
+    def _build_video_prompt_pack(self, product: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a reusable set of project-specific prompts for video generation tools."""
+        title = (product.get("title") or "Untitled Product").strip()
+        product_type = (product.get("product_type") or "digital product").replace("_", " ")
+        description = (product.get("description") or product.get("content") or "").strip()
+        short_description = " ".join(description.split())[:420] or f"A premium {product_type} called {title}."
+        price = product.get("price")
+        offer = f"priced at ${price}" if price not in (None, "") else "ready for launch"
+        audience = product.get("target_audience") or product.get("audience") or "online buyers looking for a fast result"
+
+        prompts = [
+            {
+                "id": "hero-launch",
+                "title": "Hero Launch Ad",
+                "goal": "Create a cinematic reveal for the project offer",
+                "platform": "TikTok / Reels / Shorts",
+                "duration_seconds": 20,
+                "aspect_ratio": "9:16",
+                "prompt": (
+                    f"Create a polished vertical launch ad for {title}, a {product_type} {offer}. "
+                    f"Show bold kinetic typography, premium product mockups, dramatic lighting, fast punch-in camera moves, "
+                    f"clean studio background, luxury digital brand feel, persuasive pacing, and a strong final call to action. "
+                    f"The audience is {audience}. Highlight this offer: {short_description}"
+                ),
+                "voiceover": (
+                    f"Meet {title}. This {product_type} is built for {audience}. "
+                    f"If you want a faster path to results, this is the offer to watch."
+                ),
+                "cta": f"Get {title} now.",
+            },
+            {
+                "id": "problem-solution",
+                "title": "Problem To Solution",
+                "goal": "Frame the project as the answer to a painful problem",
+                "platform": "TikTok / Reels / Shorts",
+                "duration_seconds": 25,
+                "aspect_ratio": "9:16",
+                "prompt": (
+                    f"Generate a short-form problem-solution video for {title}. Open with frustration and chaos, then transition "
+                    f"into clarity and momentum once the {product_type} appears. Use split screens, animated captions, mobile-first framing, "
+                    f"high-energy motion graphics, before-and-after storytelling, and clear benefit-driven visuals. Base the message on: {short_description}"
+                ),
+                "voiceover": (
+                    f"Still stuck trying to solve this the hard way? {title} turns the mess into a step-by-step system you can actually use."
+                ),
+                "cta": "See how the system works.",
+            },
+            {
+                "id": "demo-walkthrough",
+                "title": "Feature Demo Walkthrough",
+                "goal": "Show what the project includes and how it feels to use",
+                "platform": "Product Demo / Sales Page Video",
+                "duration_seconds": 35,
+                "aspect_ratio": "16:9",
+                "prompt": (
+                    f"Create a clean demo video for {title}. Show close-up interface or product shots, scrolling pages, zoom-ins on key sections, "
+                    f"highlight callouts, minimal premium UI overlays, subtle camera drift, soft editorial lighting, and smooth transitions. "
+                    f"Make the viewer feel the value of this {product_type}. Include these details naturally: {short_description}"
+                ),
+                "voiceover": (
+                    f"Inside {title}, you get a focused {product_type} designed to help {audience}. Here is what makes it worth having."
+                ),
+                "cta": "Watch the full breakdown and download.",
+            },
+            {
+                "id": "ugc-style",
+                "title": "UGC Testimonial Style",
+                "goal": "Make the project feel socially proven and relatable",
+                "platform": "TikTok / Instagram Reels",
+                "duration_seconds": 18,
+                "aspect_ratio": "9:16",
+                "prompt": (
+                    f"Produce a realistic UGC-style promo for {title}. Use handheld phone framing, authentic creator energy, quick jump cuts, "
+                    f"caption overlays, natural room lighting, excited reactions, and direct-to-camera delivery. The creator should explain why "
+                    f"this {product_type} stands out for {audience}. Reference this core offer: {short_description}"
+                ),
+                "voiceover": (
+                    f"I was not expecting {title} to be this useful. If you want something practical, fast, and actually clear, this is it."
+                ),
+                "cta": f"Try {title} today.",
+            },
+            {
+                "id": "launch-countdown",
+                "title": "Offer Countdown Push",
+                "goal": "Drive urgency for launch or promotion windows",
+                "platform": "Ads / Retargeting Video",
+                "duration_seconds": 15,
+                "aspect_ratio": "9:16",
+                "prompt": (
+                    f"Create a punchy countdown-style ad for {title}. Use large countdown numerals, urgent text animation, product beauty shots, "
+                    f"motion blur transitions, energetic soundtrack cues, and a final urgency card. Sell the value of the {product_type} while pushing action. "
+                    f"Center the message around: {short_description}"
+                ),
+                "voiceover": (
+                    f"If {title} is on your list, do not wait. This is your moment to grab the {product_type} and move now."
+                ),
+                "cta": "Buy before the offer closes.",
+            },
+        ]
+
+        return {
+            "project_title": title,
+            "product_type": product_type,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "prompts": prompts,
+        }
+
+    def _write_video_prompt_files(self, project_path: str, prompt_pack: Dict[str, Any]) -> None:
+        """Persist prompt packs inside the project so they ship with the ZIP export."""
+        marketing_path = os.path.join(project_path, "marketing")
+        os.makedirs(marketing_path, exist_ok=True)
+
+        json_path = os.path.join(marketing_path, "video_prompts.json")
+        with open(json_path, "w") as f:
+            json.dump(prompt_pack, f, indent=2)
+
+        lines = [
+            f"# Video Prompt Pack: {prompt_pack.get('project_title', 'Project')}",
+            "",
+            f"Generated: {prompt_pack.get('generated_at', '')}",
+            "",
+        ]
+        for index, prompt in enumerate(prompt_pack.get("prompts", []), start=1):
+            lines.extend([
+                f"## {index}. {prompt.get('title', 'Prompt')}",
+                f"- Goal: {prompt.get('goal', '')}",
+                f"- Platform: {prompt.get('platform', '')}",
+                f"- Duration: {prompt.get('duration_seconds', '')} seconds",
+                f"- Aspect Ratio: {prompt.get('aspect_ratio', '')}",
+                "",
+                "### Prompt",
+                prompt.get("prompt", ""),
+                "",
+                "### Voiceover",
+                prompt.get("voiceover", ""),
+                "",
+                "### CTA",
+                prompt.get("cta", ""),
+                "",
+            ])
+
+        markdown_path = os.path.join(marketing_path, "video_prompts.md")
+        with open(markdown_path, "w") as f:
+            f.write("\n".join(lines))
+
+    async def _sync_project_files(self, project_id: str, project_path: str) -> None:
+        if self.db is not None:
+            await self.db.projects.update_one(
+                {"id": project_id},
+                {"$set": {"files": self._list_project_files(project_path)}},
+            )
     
     def _generate_readme(self, product: Dict) -> str:
         """Generate a README for the project"""
@@ -175,6 +331,29 @@ Generated by CEO AI System
                 "files": files
             }
         }
+
+    async def get_video_prompts(self, project_id: str) -> Dict[str, Any]:
+        """Load or generate video prompts for a project."""
+        project_path = os.path.join(self.base_path, project_id)
+        if not os.path.exists(project_path):
+            return {"success": False, "error": "Project not found"}
+
+        prompt_file = os.path.join(project_path, "marketing", "video_prompts.json")
+        if os.path.exists(prompt_file):
+            with open(prompt_file) as f:
+                return {"success": True, "video_prompts": json.load(f)}
+
+        product_file = os.path.join(project_path, "product.json")
+        if not os.path.exists(product_file):
+            return {"success": False, "error": "Project data missing"}
+
+        with open(product_file) as f:
+            product = json.load(f)
+
+        prompt_pack = self._build_video_prompt_pack(product)
+        self._write_video_prompt_files(project_path, prompt_pack)
+        await self._sync_project_files(project_id, project_path)
+        return {"success": True, "video_prompts": prompt_pack}
     
     async def download_project(self, project_id: str) -> Dict[str, Any]:
         """Create a downloadable ZIP of the project"""

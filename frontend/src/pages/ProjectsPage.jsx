@@ -1,8 +1,146 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, Download, Trash2, Plus, Globe, ChevronRight, RefreshCw, BookOpen } from 'lucide-react';
+import { FolderOpen, Download, Trash2, Plus, Globe, ChevronRight, RefreshCw, BookOpen, CheckSquare, Square, Clapperboard, Copy, AlertTriangle } from 'lucide-react';
 import './Pages.css';
 
 const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+/* ─── Score ring ─────────────────────────────────────────────── */
+const ScoreRing = ({ score }) => {
+  const color = score >= 80 ? '#28a745' : score >= 50 ? '#ffc107' : '#dc3545';
+  const r = 28, circ = 2 * Math.PI * r;
+  const dash = (score / 100) * circ;
+  return (
+    <svg width={72} height={72} style={{ flexShrink: 0 }}>
+      <circle cx={36} cy={36} r={r} fill="none" stroke="#333" strokeWidth={6} />
+      <circle cx={36} cy={36} r={r} fill="none" stroke={color} strokeWidth={6}
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeLinecap="round"
+        transform="rotate(-90 36 36)" />
+      <text x={36} y={41} textAnchor="middle" fill={color} fontSize={14} fontWeight={700}>{score}%</text>
+    </svg>
+  );
+};
+
+/* ─── Checklist panel ────────────────────────────────────────── */
+const ChecklistPanel = ({ projectId, onScoreChange }) => {
+  const [items, setItems] = useState([]);
+  const [checked, setChecked] = useState([]);
+  const [score, setScore] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [blocking, setBlocking] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setLoaded(false);
+    fetch(`${API}/api/projects/${projectId}/checklist`)
+      .then(r => r.json())
+      .then(d => {
+        setItems(d.items || []);
+        setChecked(d.checked || []);
+        setScore(d.score || 0);
+        setReady(d.ready || false);
+        setBlocking(d.blocking || []);
+        setLoaded(true);
+        onScoreChange && onScoreChange(d.score || 0, d.ready || false);
+      })
+      .catch(() => setLoaded(true));
+  }, [projectId, onScoreChange]);
+
+  const toggle = async (id) => {
+    const next = checked.includes(id) ? checked.filter(x => x !== id) : [...checked, id];
+    setChecked(next);
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/api/projects/${projectId}/checklist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checked: next }),
+      });
+      const d = await r.json();
+      setScore(d.score || 0);
+      setReady(d.ready || false);
+      onScoreChange && onScoreChange(d.score || 0, d.ready || false);
+      // Refresh blocking list
+      fetch(`${API}/api/projects/${projectId}/checklist`)
+        .then(r2 => r2.json()).then(d2 => setBlocking(d2.blocking || []));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>Loading checklist…</div>;
+
+  // Group by category
+  const categories = [...new Set(items.map(i => i.category))];
+
+  return (
+    <div>
+      {/* Score header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24, padding: '16px 20px', background: '#0d0d1a', borderRadius: 12, border: `1px solid ${ready ? '#28a74540' : '#dc354540'}` }}>
+        <ScoreRing score={score} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
+            {ready
+              ? <span style={{ color: '#28a745' }}>✅ Quality Gate Passed — Ready to publish!</span>
+              : <span style={{ color: '#ffc107' }}>⚠️ Not ready — quality gate requires 80%</span>}
+          </div>
+          <div style={{ fontSize: 12, color: '#888' }}>
+            {checked.length} of {items.length} items complete
+            {saving && <span style={{ marginLeft: 8, color: '#555' }}>Saving…</span>}
+          </div>
+          {!ready && blocking.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {blocking.slice(0, 2).map(b => (
+                <div key={b} style={{ fontSize: 11, color: '#dc3545', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                  <AlertTriangle size={10} />blocking: {b}
+                </div>
+              ))}
+              {blocking.length > 2 && <div style={{ fontSize: 11, color: '#888' }}>+{blocking.length - 2} more required items</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Checklist by category */}
+      {categories.map(cat => (
+        <div key={cat} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{cat}</div>
+          {items.filter(i => i.category === cat).map(item => {
+            const isChecked = checked.includes(item.id);
+            return (
+              <div
+                key={item.id}
+                onClick={() => toggle(item.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                  borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+                  background: isChecked ? '#28a74510' : '#0d0d1a',
+                  border: `1px solid ${isChecked ? '#28a74530' : '#222'}`,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {isChecked
+                  ? <CheckSquare size={16} color="#28a745" style={{ flexShrink: 0 }} />
+                  : <Square size={16} color={item.required ? '#dc3545' : '#555'} style={{ flexShrink: 0 }} />}
+                <span style={{ fontSize: 13, color: isChecked ? '#ccc' : '#aaa', flex: 1, textDecoration: isChecked ? 'none' : 'none' }}>
+                  {item.label}
+                </span>
+                {item.required && !isChecked && (
+                  <span style={{ fontSize: 10, color: '#dc3545', fontWeight: 600 }}>REQUIRED</span>
+                )}
+                {item.required && isChecked && (
+                  <span style={{ fontSize: 10, color: '#28a745' }}>✓</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const ProjectsPage = () => {
   const [projects, setProjects] = useState([]);
@@ -18,6 +156,12 @@ const ProjectsPage = () => {
   const [activeTab, setActiveTab] = useState('projects');
   const [selectedPlatform, setSelectedPlatform] = useState(null);
   const [platformGuide, setPlatformGuide] = useState(null);
+  // Quality checklist
+  const [projectTab, setProjectTab] = useState('video'); // 'video' | 'files' | 'checklist'
+  const [projectScores, setProjectScores] = useState({}); // projectId -> {score, ready}
+  const [videoPrompts, setVideoPrompts] = useState(null);
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [copiedPromptId, setCopiedPromptId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,9 +192,32 @@ const ProjectsPage = () => {
     load();
   }, [load]);
 
+  const handleScoreChange = useCallback((projectId) => (score, ready) => {
+    setProjectScores(prev => ({ ...prev, [projectId]: { score, ready } }));
+  }, []);
+
+  const loadVideoPrompts = useCallback(async (projectId) => {
+    setPromptsLoading(true);
+    setVideoPrompts(null);
+    try {
+      const r = await fetch(`${API}/api/projects/${projectId}/video-prompts`);
+      if (r.ok) {
+        const d = await r.json();
+        setVideoPrompts(d.video_prompts || null);
+      }
+    } catch (_) {
+      setVideoPrompts(null);
+    } finally {
+      setPromptsLoading(false);
+    }
+  }, []);
+
   const openProject = async (projectId) => {
     setSelectedProject(projectId);
     setProjectDetail(null);
+    setProjectTab('video');
+    setCopiedPromptId(null);
+    loadVideoPrompts(projectId);
     try {
       const r = await fetch(`${API}/api/projects/${projectId}`);
       if (r.ok) {
@@ -74,6 +241,17 @@ const ProjectsPage = () => {
     } finally {
       setCreating(null);
     }
+  };
+
+  const copyPrompt = async (prompt) => {
+    const copyText = [prompt.prompt, '', `Voiceover: ${prompt.voiceover}`, `CTA: ${prompt.cta}`].join('\n');
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyText);
+        setCopiedPromptId(prompt.id);
+        setTimeout(() => setCopiedPromptId(null), 1600);
+      }
+    } catch (_) {}
   };
 
   const downloadProject = async (projectId) => {
@@ -253,16 +431,80 @@ const ProjectsPage = () => {
                       <div><strong>Status:</strong> {projectDetail.product.status}</div>
                     </div>
                   )}
-                  <h3 style={{ fontSize: 14, marginBottom: 10 }}>Files ({projectDetail.files?.length || 0})</h3>
-                  {(projectDetail.files || []).map((file, i) => (
-                    <div key={i} style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '8px 12px', background: '#0d0d1a', borderRadius: 6, marginBottom: 4, fontSize: 12,
-                    }}>
-                      <span style={{ color: '#aaa' }}>📄 {file.path || file.name}</span>
-                      <span style={{ color: '#666' }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
+
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'video', label: 'Video Prompts' },
+                      { id: 'checklist', label: 'Quality Gate' },
+                      { id: 'files', label: `Files (${projectDetail.files?.length || 0})` },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        className={`btn ${projectTab === tab.id ? 'btn-primary' : 'btn-outline'}`}
+                        style={{ padding: '6px 14px', fontSize: 12 }}
+                        onClick={() => setProjectTab(tab.id)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {projectTab === 'video' ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <Clapperboard size={16} />
+                        <h3 style={{ fontSize: 14, margin: 0 }}>Project Video Prompts</h3>
+                      </div>
+                      <p style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>
+                        These prompts are tailored to this project and ready for Sora, Runway, Veo, or any text-to-video workflow.
+                      </p>
+                      {promptsLoading ? (
+                        <p style={{ color: '#666' }}>Generating prompt pack...</p>
+                      ) : videoPrompts?.prompts?.length ? (
+                        videoPrompts.prompts.map((prompt) => (
+                          <div key={prompt.id} style={{ background: '#0d0d1a', border: '1px solid #222', borderRadius: 10, padding: 16, marginBottom: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: 14 }}>{prompt.title}</div>
+                                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                                  {prompt.platform} • {prompt.duration_seconds}s • {prompt.aspect_ratio}
+                                </div>
+                              </div>
+                              <button
+                                className="btn btn-outline"
+                                style={{ padding: '5px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={() => copyPrompt(prompt)}
+                              >
+                                <Copy size={12} />
+                                {copiedPromptId === prompt.id ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600, marginBottom: 6 }}>{prompt.goal}</div>
+                            <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.65, marginBottom: 12 }}>{prompt.prompt}</div>
+                            <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}><strong>Voiceover:</strong> {prompt.voiceover}</div>
+                            <div style={{ fontSize: 12, color: '#aaa' }}><strong>CTA:</strong> {prompt.cta}</div>
+                          </div>
+                        ))
+                      ) : (
+                        <p style={{ color: '#666' }}>No video prompts available for this project yet.</p>
+                      )}
                     </div>
-                  ))}
+                  ) : projectTab === 'checklist' ? (
+                    <ChecklistPanel projectId={selectedProject} onScoreChange={handleScoreChange(selectedProject)} />
+                  ) : (
+                    <>
+                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Files ({projectDetail.files?.length || 0})</h3>
+                      {(projectDetail.files || []).map((file, i) => (
+                        <div key={i} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '8px 12px', background: '#0d0d1a', borderRadius: 6, marginBottom: 4, fontSize: 12,
+                        }}>
+                          <span style={{ color: '#aaa' }}>📄 {file.path || file.name}</span>
+                          <span style={{ color: '#666' }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </>
               ) : (
                 <p style={{ color: '#666' }}>Loading project details...</p>

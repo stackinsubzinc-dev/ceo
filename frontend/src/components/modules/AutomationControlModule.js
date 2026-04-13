@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Settings, Toggle2, AlertCircle } from 'lucide-react';
+import { Settings, ToggleRight, AlertCircle } from 'lucide-react';
 
 const AutomationControlModule = () => {
   const [automations, setAutomations] = useState([
@@ -94,7 +94,7 @@ const AutomationControlModule = () => {
                       size="sm"
                       className="border-slate-600 hover:bg-slate-700/50"
                     >
-                      <Toggle2 className="w-4 h-4" />
+                      <ToggleRight className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
