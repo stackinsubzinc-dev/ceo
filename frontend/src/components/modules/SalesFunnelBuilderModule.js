@@ -3,19 +3,42 @@
  * Creates landing pages, checkout pages, email sequences, etc
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Zap } from 'lucide-react';
 
 const SalesFunnelBuilderModule = () => {
-  const funnelPages = [
-    { name: 'Landing Page', icon: '🎯', status: '✅ Live', ctr: '12.5%' },
-    { name: 'Product Page', icon: '📦', status: '✅ Live', ctr: '8.3%' },
-    { name: 'Checkout', icon: '💳', status: '✅ Live', ctr: '6.2%' },
-    { name: 'Upsell', icon: '⬆️', status: '✅ Live', ctr: '4.1%' },
-    { name: 'Thank You', icon: '🎉', status: '✅ Live', ctr: '-' }
-  ];
+  const [funnelPages, setFunnelPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const loadFunnelData = async () => {
+      try {
+        // Load funnel from backend
+        const response = await fetch(`${API}/api/sales-funnel`);
+        if (response.ok) {
+          const data = await response.json();
+          setFunnelPages(Array.isArray(data) ? data : []);
+        } else {
+          // Default structure if no funnel exists
+          setFunnelPages([
+            { name: 'Landing Page', icon: '🎯', status: 'Draft', ctr: '0%' },
+            { name: 'Product Page', icon: '📦', status: 'Draft', ctr: '0%' },
+            { name: 'Checkout', icon: '💳', status: 'Draft', ctr: '0%' },
+            { name: 'Upsell', icon: '⬆️', status: 'Draft', ctr: '0%' },
+            { name: 'Thank You', icon: '🎉', status: 'Draft', ctr: '0%' }
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to load funnel data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadFunnelData();
+  }, [API]);
 
   return (
     <div className="space-y-6">

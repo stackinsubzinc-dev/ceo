@@ -3,27 +3,49 @@
  * Real-time revenue tracking and performance metrics
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { BarChart3 } from 'lucide-react';
 
 const AnalyticsRevenueModule = () => {
-  const revenueData = [
-    { day: 'Mon', revenue: 2400, conversions: 24 },
-    { day: 'Tue', revenue: 2210, conversions: 22 },
-    { day: 'Wed', revenue: 2290, conversions: 23 },
-    { day: 'Thu', revenue: 2000, conversions: 20 },
-    { day: 'Fri', revenue: 2181, conversions: 21 },
-    { day: 'Sat', revenue: 2500, conversions: 25 },
-    { day: 'Sun', revenue: 2100, conversions: 21 }
-  ];
+  const [revenueData, setRevenueData] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
-  const topProducts = [
-    { name: 'AI Writing Tool', revenue: 3200, sales: 64 },
-    { name: 'Templates Pack', revenue: 2100, sales: 42 },
-    { name: 'Course Bundle', revenue: 1800, sales: 18 }
-  ];
+  useEffect(() => {
+    const loadAnalyticsData = async () => {
+      try {
+        // Load real data from backend
+        const [revenueResponse, productsResponse] = await Promise.all([
+          fetch(`${API}/api/analytics/realtime`),
+          fetch(`${API}/api/products?limit=3`)
+        ]);
+
+        if (revenueResponse.ok) {
+          // Format revenue data from backend
+          const data = await revenueResponse.json();
+          setRevenueData(data.daily_breakdown || []);
+        }
+
+        if (productsResponse.ok) {
+          const products = await productsResponse.json();
+          // Transform products to match the expected format
+          setTopProducts(products.slice(0, 3).map(p => ({
+            name: p.title,
+            revenue: p.revenue || 0,
+            sales: p.sales || 0
+          })));
+        }
+      } catch (error) {
+        console.error('Failed to load analytics data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAnalyticsData();
+  }, [API]);
 
   return (
     <div className="space-y-6">

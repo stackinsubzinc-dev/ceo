@@ -52,32 +52,24 @@ const FactoryDashboard = () => {
     avgTimePerCycle: '45 mins'
   });
 
-  const [recentProducts, setRecentProducts] = useState([
-    {
-      id: 1,
-      name: 'AI Copywriting Masterclass',
-      niche: 'AI Tools',
-      status: 'Published',
-      revenue: '$2,145',
-      sales: 43
-    },
-    {
-      id: 2,
-      name: 'E-commerce SEO Templates',
-      niche: 'E-commerce',
-      status: 'Publishing',
-      revenue: '$890',
-      sales: 18
-    },
-    {
-      id: 3,
-      name: 'Personal Finance Course',
-      niche: 'Finance',
-      status: 'Optimizing',
-      revenue: '$3,421',
-      sales: 67
-    }
-  ]);
+  const [recentProducts, setRecentProducts] = useState([]);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+  // Load real products from backend on mount
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const response = await fetch(`${API}/api/products?limit=3`);
+        if (response.ok) {
+          const data = await response.json();
+          setRecentProducts(data.slice(0, 3));
+        }
+      } catch (error) {
+        console.error('Failed to load products:', error);
+      }
+    };
+    loadProducts();
+  }, [API]);
 
   const startFactoryCycle = async () => {
     console.log('Starting factory cycle...');

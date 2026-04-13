@@ -37,6 +37,7 @@ const Layout = ({ children }) => {
     { name: 'Analytics', href: '/analytics', icon: LineChart },
     { name: 'Automation', href: '/automation', icon: Settings },
     { name: 'Growth Lab', href: '/growth', icon: Lightbulb },
+    { name: 'Factory', href: '/factory', icon: Package },
     { name: 'Hunter', href: '/hunter', icon: Radar },
     { name: 'Projects', href: '/projects', icon: FolderOpen },
     { name: 'Atlas AI', href: '/assistant', icon: Bot },

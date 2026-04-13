@@ -3,58 +3,54 @@
  * Manage all automations, workflows, and integrations
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Settings, ToggleRight, AlertCircle } from 'lucide-react';
 
 const AutomationControlModule = () => {
-  const [automations, setAutomations] = useState([
-    {
-      id: 1,
-      name: 'Auto-publish to Gumroad',
-      status: 'active',
-      lastRun: '2 hours ago',
-      nextRun: 'Tomorrow 9 AM'
-    },
-    {
-      id: 2,
-      name: 'Daily TikTok posting',
-      status: 'active',
-      lastRun: '1 hour ago',
-      nextRun: 'Today 3 PM'
-    },
-    {
-      id: 3,
-      name: 'Email sequence sender',
-      status: 'active',
-      lastRun: '30 mins ago',
-      nextRun: 'Today 6 PM'
-    },
-    {
-      id: 4,
-      name: 'Revenue report',
-      status: 'paused',
-      lastRun: '3 days ago',
-      nextRun: '-'
-    }
-  ]);
+  const [automations, setAutomations] = useState([]);
+  const [integrations, setIntegrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
-  const integrations = [
-    { name: 'Gumroad', status: '✅ Connected', icon: '🛍️' },
-    { name: 'Shopify', status: '❌ Not connected', icon: '🏪' },
-    { name: 'Stripe', status: '✅ Connected', icon: '💳' },
-    { name: 'TikTok API', status: '✅ Connected', icon: '🎵' },
-    { name: 'Instagram', status: '✅ Connected', icon: '📷' },
-    { name: 'Twitter', status: '❌ Needs refresh', icon: '𝕏' },
-    { name: 'SendGrid', status: '✅ Connected', icon: '✉️' },
-    { name: 'Google Trends', status: '✅ Connected', icon: '📊' }
-  ];
+  useEffect(() => {
+    const loadAutomations = async () => {
+      try {
+        // Load automations from backend
+        const response = await fetch(`${API}/api/automations`);
+        if (response.ok) {
+          const data = await response.json();
+          setAutomations(data || []);
+        }
+        
+        // Load integrations/keys status
+        const keysResponse = await fetch(`${API}/api/keys/status`);
+        if (keysResponse.ok) {
+          const keys = await keysResponse.json();
+          // Map keys to integration status
+          const integrationStatus = [
+            { name: 'Gumroad', status: keys.gumroad_token ? '✅ Connected' : '❌ Not connected', icon: '🛍️' },
+            { name: 'Shopify', status: keys.shopify_key ? '✅ Connected' : '❌ Not connected', icon: '🏪' },
+            { name: 'Stripe', status: keys.stripe_key ? '✅ Connected' : '❌ Not connected', icon: '💳' },
+            { name: 'TikTok API', status: keys.tiktok_key ? '✅ Connected' : '❌ Not connected', icon: '🎵' },
+            { name: 'Instagram', status: keys.instagram_key ? '✅ Connected' : '❌ Not connected', icon: '📷' },
+            { name: 'SendGrid', status: keys.sendgrid_key ? '✅ Connected' : '❌ Not connected', icon: '✉️' }
+          ];
+          setIntegrations(integrationStatus);
+        }
+      } catch (error) {
+        console.error('Failed to load automations:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAutomations();
+  }, [API]);
 
-  const toggleAutomation = (id) => {
-    setAutomations(automations.map(a => 
-      a.id === id ? { ...a, status: a.status === 'active' ? 'paused' : 'active' } : a
-    ));
+  const handleToggleAutomation = (id) => {
+    // In production, call backend to toggle automation
+    console.log('Toggle automation:', id);
   };
 
   return (
@@ -89,7 +85,7 @@ const AutomationControlModule = () => {
                       {auto.status === 'active' ? '🟢' : '⚪'} {auto.status.toUpperCase()}
                     </span>
                     <Button
-                      onClick={() => toggleAutomation(auto.id)}
+                      onClick={() => handleToggleAutomation(auto.id)}
                       variant="outline"
                       size="sm"
                       className="border-slate-600 hover:bg-slate-700/50"

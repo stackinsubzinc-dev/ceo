@@ -50,6 +50,12 @@ from ai_services.auth_utils import (
     create_access_token, decode_token, hash_password, verify_password,
     UserCreate, UserResponse, TokenResponse, require_auth
 )
+from ai_services.faceless_video_generator import FacelessVideoGenerator, get_faceless_video_generator
+from ai_services.multi_platform_product_sync import MultiPlatformProductSync, get_product_sync_manager
+from ai_services.youtube_data_api import YouTubeDataAPI, get_youtube_api
+from ai_services.product_ranking_engine import ProductRankingEngine, get_product_ranking_engine
+from ai_services.multi_platform_ad_manager import MultiPlatformAdCampaignManager, get_campaign_manager
+from ai_services.revenue_attribution_engine import RevenueAttributionEngine
 
 # Import core system
 from core.routes import router as core_router
@@ -4023,6 +4029,397 @@ async def send_product_notification(product_id: str, to_email: str, _auth: dict 
         raise HTTPException(status_code=500, detail=f"Error sending product notification: {str(e)}")
 
 
+# ==================== FACELESS VIDEO GENERATION (REAL) ====================
+
+class FacelessVideoRequest(BaseModel):
+    product_id: str
+    style: str = Field(default="motivational", description="Video style: motivational, tutorial, demo, testimonial, comparison")
+    duration: int = Field(default=60, description="Video duration in seconds (max 60 for YouTube Shorts)")
+    count: int = Field(default=1, description="Number of video variations to generate")
+
+@api_router.post("/videos/generate-faceless")
+async def generate_faceless_video(request: FacelessVideoRequest, background_tasks: BackgroundTasks):
+    """
+    Generate faceless YouTube Shorts/TikTok videos with voiceovers and background footage
+    
+    Returns professional vertical 1080x1920 videos ready for YouTube Shorts, TikTok, and Instagram Reels
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        # Get product
+        product = await db.products.find_one({"id": request.product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Generate videos
+        generator = await get_faceless_video_generator()
+        
+        if request.count == 1:
+            video_result = await generator.generate_full_video(
+                product=product,
+                video_style=request.style,
+                duration=request.duration
+            )
+            videos = [video_result]
+        else:
+            videos = await generator.generate_video_series(
+                product=product,
+                count=request.count,
+                styles=[request.style]
+            )
+        
+        # Store in database
+        video_records = []
+        for video in videos:
+            record = {
+                "id": video.get("video_id"),
+                "product_id": request.product_id,
+                "product_title": product.get("title"),
+                "video_path": video.get("video_path"),
+                "style": request.style,
+                "duration": request.duration,
+                "format": "1080x1920",
+                "platforms_ready": video.get("platforms_ready"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "ready"
+            }
+            
+            if db is not None:
+                await db.generated_videos.insert_one(record)
+            video_records.append(record)
+        
+        return {
+            "success": all(v.get("success", False) for v in videos),
+            "product_id": request.product_id,
+            "videos_generated": len(videos),
+            "videos": videos,
+            "ready_for": {
+                "youtube_shorts": True,
+                "tiktok": True,
+                "instagram_reels": True,
+                "instagram_stories": True
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Video generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/videos/product/{product_id}")
+async def get_product_videos(product_id: str):
+    """Get all generated videos for a product"""
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        videos = await db.generated_videos.find(
+            {"product_id": product_id},
+            {"_id": 0}
+        ).to_list(100)
+        
+        return {
+            "product_id": product_id,
+            "videos_count": len(videos),
+            "videos": videos
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== YOUTUBE DATA API (VIDEO UPLOADING) ====================
+
+class YouTubeUploadRequest(BaseModel):
+    video_id: str
+    title: str
+    description: str
+    tags: List[str] = []
+    privacy_status: str = Field(default="public", description="public, unlisted, or private")
+    category_id: str = Field(default="24", description="YouTube category ID")
+    made_for_kids: bool = False
+
+@api_router.get("/youtube/auth/url")
+async def get_youtube_auth_url(redirect_uri: str = "http://localhost:8000/api/youtube/auth/callback"):
+    """Get YouTube OAuth authorization URL"""
+    try:
+        youtube_api = await get_youtube_api()
+        auth_url = youtube_api.get_auth_url(redirect_uri)
+        
+        return {
+            "success": True,
+            "auth_url": auth_url,
+            "message": "Visit this URL to authorize YouTube access"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/youtube/auth/callback")
+async def youtube_auth_callback(code: str, redirect_uri: str = "http://localhost:8000/api/youtube/auth/callback"):
+    """Handle YouTube OAuth callback"""
+    try:
+        youtube_api = await get_youtube_api()
+        result = await youtube_api.handle_oauth_callback(code, redirect_uri)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/youtube/upload")
+async def upload_to_youtube(request: YouTubeUploadRequest, background_tasks: BackgroundTasks):
+    """
+    Upload a generated video to YouTube Shorts
+    
+    Requirements:
+    - YouTube API credentials configured
+    - User must have authorized YouTube access
+    - Video file must exist
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        # Get generated video
+        video_record = await db.generated_videos.find_one(
+            {"id": request.video_id},
+            {"_id": 0}
+        )
+        
+        if not video_record:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        video_path = video_record.get("video_path")
+        
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=400, detail=f"Video file not found: {video_path}")
+        
+        # Upload to YouTube
+        youtube_api = await get_youtube_api()
+        upload_result = await youtube_api.upload_video(
+            video_path=video_path,
+            title=request.title,
+            description=request.description,
+            tags=request.tags,
+            category_id=request.category_id,
+            privacy_status=request.privacy_status,
+            made_for_kids=request.made_for_kids
+        )
+        
+        if upload_result.get("success"):
+            video_id = upload_result.get("video_id")
+            
+            # Store upload record
+            await db.youtube_uploads.insert_one({
+                "local_video_id": request.video_id,
+                "youtube_video_id": video_id,
+                "title": request.title,
+                "url": upload_result.get("url"),
+                "shorts_url": upload_result.get("shorts_url"),
+                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                "privacy_status": request.privacy_status
+            })
+        
+        return upload_result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"YouTube upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/youtube/video/{video_id}/status")
+async def get_youtube_video_status(video_id: str):
+    """Get YouTube video processing status"""
+    try:
+        youtube_api = await get_youtube_api()
+        status = await youtube_api.get_video_status(video_id)
+        
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/youtube/channel/analytics")
+async def get_youtube_channel_analytics():
+    """Get YouTube channel analytics"""
+    try:
+        youtube_api = await get_youtube_api()
+        analytics = await youtube_api.get_channel_analytics()
+        
+        return analytics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/youtube/playlist/create")
+async def create_youtube_playlist(name: str, description: str = "", privacy_status: str = "public"):
+    """Create a YouTube playlist for product videos"""
+    try:
+        youtube_api = await get_youtube_api()
+        playlist = await youtube_api.create_playlist(
+            title=name,
+            description=description,
+            privacy_status=privacy_status
+        )
+        
+        if db is not None and playlist.get("success"):
+            await db.youtube_playlists.insert_one({
+                "playlist_id": playlist.get("playlist_id"),
+                "name": name,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+        
+        return playlist
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== MULTI-PLATFORM PRODUCT SYNC (REAL) ====================
+
+class ProductSyncRequest(BaseModel):
+    product_id: str
+    platforms: Optional[List[str]] = Field(default=None, description="Etsy, Shopify, Amazon, TikTok Shop, Gumroad. If None, syncs to all configured.")
+
+class InventorySyncRequest(BaseModel):
+    product_id: str
+    inventory_updates: Dict[str, int] = Field(description="Platform-specific inventory: {'etsy': 50, 'shopify': 100, ...}")
+
+class PricingSyncRequest(BaseModel):
+    product_id: str
+    pricing: Dict[str, float] = Field(description="Platform-specific pricing: {'etsy': 29.99, 'shopify': 39.99, ...}")
+
+@api_router.post("/products/{product_id}/sync-all-platforms")
+async def sync_product_to_all_platforms(product_id: str, request: ProductSyncRequest):
+    """
+    Sync a product to all configured marketplaces (Etsy, Shopify, Amazon, TikTok Shop, Gumroad)
+    
+    One-click publishing to all your stores with product data, images, and pricing
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        # Get product
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Sync to platforms
+        sync_manager = await get_product_sync_manager()
+        result = await sync_manager.sync_product_to_all_platforms(
+            product=product,
+            platforms=request.platforms
+        )
+        
+        # Store sync record
+        if db is not None:
+            sync_record = {
+                "product_id": product_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sync_result": result,
+                "status": "success" if result.get("success") else "partial"
+            }
+            await db.product_syncs.insert_one(sync_record)
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Product sync error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.put("/products/{product_id}/sync-inventory")
+async def sync_product_inventory(product_id: str, request: InventorySyncRequest):
+    """
+    Update product inventory across all synced platforms simultaneously
+    
+    Keep inventory in sync across Etsy, Shopify, Amazon, TikTok Shop, etc with one call
+    """
+    try:
+        sync_manager = await get_product_sync_manager()
+        result = await sync_manager.sync_inventory_across_platforms(
+            product_id=product_id,
+            inventory_updates=request.inventory_updates
+        )
+        
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.put("/products/{product_id}/sync-pricing")
+async def sync_product_pricing(product_id: str, request: PricingSyncRequest):
+    """
+    Update product pricing across platforms with different prices per marketplace
+    
+    Set platform-specific prices (e.g., $29.99 on Etsy, $39.99 on Shopify)
+    """
+    try:
+        sync_manager = await get_product_sync_manager()
+        result = await sync_manager.sync_pricing_rules(
+            product_id=product_id,
+            pricing=request.pricing
+        )
+        
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/products/{product_id}/sync-status")
+async def get_product_sync_status(product_id: str):
+    """Get product publishing status across all platforms"""
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        # Check sync history
+        sync_records = await db.product_syncs.find(
+            {"product_id": product_id},
+            {"_id": 0}
+        ).sort("timestamp", -1).to_list(10)
+        
+        sync_manager = await get_product_sync_manager()
+        current_status = await sync_manager.get_product_status_across_platforms(product_id)
+        
+        return {
+            "product_id": product_id,
+            "current_status": current_status,
+            "recent_syncs": sync_records
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/products/sync-batch")
+async def sync_multiple_products(product_ids: List[str]):
+    """Sync multiple products to all platforms in parallel"""
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        results = {}
+        sync_manager = await get_product_sync_manager()
+        
+        for product_id in product_ids:
+            product = await db.products.find_one({"id": product_id}, {"_id": 0})
+            if product:
+                result = await sync_manager.sync_product_to_all_platforms(product)
+                results[product_id] = result
+            else:
+                results[product_id] = {"error": "Product not found"}
+        
+        return {
+            "success": True,
+            "total": len(product_ids),
+            "synced": sum(1 for r in results.values() if r.get("success")),
+            "results": results
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Payment Processing (Stripe) ====================
 
 class StripeProduct(BaseModel):
@@ -4340,6 +4737,371 @@ async def get_all_payment_stats():
             "today_sales": 0,
             "error": str(e)
         }
+
+
+# ==================== PRODUCT RANKING & ADVERTISING CAMPAIGNS ====================
+
+class ProductRankingRequest(BaseModel):
+    limit: int = Field(default=10, description="Number of products to return")
+    metrics: Optional[List[str]] = Field(default=["revenue", "sales_count"], description="Ranking metrics")
+    time_period: str = Field(default="30d", description="7d, 30d, 90d, or all")
+    min_sales: int = Field(default=0, description="Minimum sales threshold")
+
+class AdCampaignRequest(BaseModel):
+    product_id: str
+    platforms: List[str] = Field(description="Ad platforms: google_ads, facebook_ads, tiktok_ads, linkedin_ads, pinterest_ads, amazon_ads, youtube_ads")
+    total_budget: float = Field(description="Total campaign budget in USD")
+    daily_budget: float = Field(description="Daily budget per platform in USD")
+    duration_days: int = Field(default=30)
+    target_audience: Optional[Dict[str, Any]] = Field(default=None)
+
+@api_router.get("/products/ranking/top")
+async def get_top_products(limit: int = 10, 
+                           metrics: str = "revenue,sales_count",
+                           time_period: str = "30d",
+                           min_sales: int = 0):
+    """
+    Get top-performing products ranked by specified metrics
+    
+    Identifies bestsellers and products ready for advertising investment
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        ranker = await get_product_ranking_engine()
+        await ranker.set_db(db)
+        
+        metric_list = [m.strip() for m in metrics.split(",")]
+        
+        top_products = await ranker.get_top_products(
+            limit=limit,
+            metrics=metric_list,
+            time_period=time_period,
+            min_sales=min_sales
+        )
+        
+        return {
+            "success": True,
+            "count": len(top_products),
+            "products": top_products
+        }
+    except Exception as e:
+        logger.error(f"Failed to get top products: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/products/ranking/trending")
+async def get_trending_products(limit: int = 5):
+    """
+    Get trending products (fastest growing)
+    
+    Products with highest sales velocity week-over-week
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        ranker = await get_product_ranking_engine()
+        await ranker.set_db(db)
+        
+        trending = await ranker.get_trending_products(limit=limit)
+        
+        return {
+            "success": True,
+            "count": len(trending),
+            "products": trending
+        }
+    except Exception as e:
+        logger.error(f"Failed to get trending products: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/products/ranking/high-margin")
+async def get_high_margin_products(limit: int = 10):
+    """
+    Get most profitable products (high margin)
+    
+    Best products for profitability optimization
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        ranker = await get_product_ranking_engine()
+        await ranker.set_db(db)
+        
+        products = await ranker.get_high_margin_products(limit=limit)
+        
+        return {
+            "success": True,
+            "count": len(products),
+            "products": products
+        }
+    except Exception as e:
+        logger.error(f"Failed to get high margin products: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/products/{product_id}/health")
+async def get_product_health(product_id: str):
+    """
+    Get product health metrics for advertising readiness
+    
+    Comprehensive assessment of whether a product is ready for ad campaigns
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        ranker = await get_product_ranking_engine()
+        await ranker.set_db(db)
+        
+        health = await ranker.get_product_health(product_id)
+        
+        return health
+    except Exception as e:
+        logger.error(f"Failed to get product health: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/campaigns/create")
+async def create_advertising_campaign(request: AdCampaignRequest):
+    """
+    Create and launch advertising campaigns on multiple platforms
+    
+    One-click multi-platform ad campaign setup with automated creative generation
+    Supports: Google Ads, Facebook Ads, TikTok Ads, LinkedIn Ads, Pinterest Ads, Amazon Ads, YouTube Ads
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        manager = await get_campaign_manager()
+        await manager.set_db(db)
+        
+        result = await manager.create_campaign(
+            product_id=request.product_id,
+            platforms=request.platforms,
+            budget=request.total_budget,
+            daily_budget=request.daily_budget,
+            duration_days=request.duration_days,
+            target_audience=request.target_audience
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to create campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/{campaign_id}/performance")
+async def get_campaign_performance(campaign_id: str):
+    """
+    Get real-time campaign performance metrics
+    
+    Comprehensive metrics across all platforms: impressions, clicks, conversions, spend, ROI
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        manager = await get_campaign_manager()
+        await manager.set_db(db)
+        
+        performance = await manager.get_campaign_performance(campaign_id)
+        
+        return performance
+    except Exception as e:
+        logger.error(f"Failed to get campaign performance: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/{campaign_id}/optimize")
+async def optimize_campaign(campaign_id: str):
+    """
+    Get campaign optimization recommendations
+    
+    AI-powered suggestions to improve CTR, conversion rate, and ROI
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        manager = await get_campaign_manager()
+        await manager.set_db(db)
+        
+        optimizations = await manager.optimize_campaign(campaign_id)
+        
+        return optimizations
+    except Exception as e:
+        logger.error(f"Failed to optimize campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/campaigns/{campaign_id}/pause")
+async def pause_campaign(campaign_id: str):
+    """
+    Pause a campaign across all platforms
+    
+    Stops spending and impressions immediately on all connected platforms
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        manager = await get_campaign_manager()
+        await manager.set_db(db)
+        
+        result = await manager.pause_campaign(campaign_id)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to pause campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns")
+async def list_campaigns(product_id: Optional[str] = None, 
+                        status: Optional[str] = None,
+                        limit: int = 20):
+    """
+    List all advertising campaigns
+    
+    Filter by product, status, or get all active campaigns
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        manager = await get_campaign_manager()
+        await manager.set_db(db)
+        
+        campaigns = await manager.list_campaigns(
+            product_id=product_id,
+            status=status,
+            limit=limit
+        )
+        
+        return {
+            "count": len(campaigns),
+            "campaigns": campaigns
+        }
+    except Exception as e:
+        logger.error(f"Failed to list campaigns: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/roi/dashboard")
+async def get_revenue_dashboard(product_id: Optional[str] = None):
+    """
+    Get comprehensive revenue attribution dashboard
+    
+    Track total spend, revenue, ROI, conversions across all campaigns and platforms
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        attribution = RevenueAttributionEngine()
+        await attribution.set_db(db)
+        
+        dashboard = await attribution.get_revenue_dashboard(product_id=product_id)
+        
+        return dashboard
+    except Exception as e:
+        logger.error(f"Failed to get revenue dashboard: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/{campaign_id}/roi")
+async def get_campaign_roi(campaign_id: str, attribution_model: str = "last_touch"):
+    """
+    Get detailed ROI calculation for a campaign
+    
+    Attributes sales revenue to campaigns and calculates profitability metrics
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        attribution = RevenueAttributionEngine()
+        await attribution.set_db(db)
+        
+        roi = await attribution.get_campaign_roi(campaign_id, attribution_model)
+        
+        return roi
+    except Exception as e:
+        logger.error(f"Failed to get campaign ROI: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/{campaign_id}/roi/by-platform")
+async def get_platform_attribution(campaign_id: str):
+    """
+    Get ROI breakdown by ad platform
+    
+    See which platforms are performing best for this campaign
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        attribution = RevenueAttributionEngine()
+        await attribution.set_db(db)
+        
+        platform_roi = await attribution.get_platform_attribution(campaign_id)
+        
+        return platform_roi
+    except Exception as e:
+        logger.error(f"Failed to get platform attribution: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/campaigns/{campaign_id}/roi/time-series")
+async def get_campaign_roi_time_series(campaign_id: str, interval: str = "daily"):
+    """
+    Get ROI progression over time
+    
+    Track cumulative spend, revenue, and ROI daily/weekly/hourly
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        attribution = RevenueAttributionEngine()
+        await attribution.set_db(db)
+        
+        time_series = await attribution.get_time_series_roi(campaign_id, interval)
+        
+        return {
+            "campaign_id": campaign_id,
+            "interval": interval,
+            "data": time_series
+        }
+    except Exception as e:
+        logger.error(f"Failed to get ROI time series: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/sales/record")
+async def record_sale(product_id: str,
+                     amount: float,
+                     campaign_id: Optional[str] = None,
+                     platform: Optional[str] = None,
+                     user_id: Optional[str] = None):
+    """
+    Record a sale for attribution tracking
+    
+    Link sales to advertising campaigns for accurate ROI measurement
+    """
+    try:
+        if db is None:
+            raise HTTPException(status_code=400, detail="Database not configured")
+        
+        attribution = RevenueAttributionEngine()
+        await attribution.set_db(db)
+        
+        result = await attribution.record_sale(
+            product_id=product_id,
+            amount=amount,
+            source="campaign" if campaign_id else "organic",
+            campaign_id=campaign_id,
+            platform=platform,
+            user_id=user_id
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to record sale: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Include the router in the main app

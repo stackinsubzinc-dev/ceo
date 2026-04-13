@@ -3,33 +3,16 @@
  * Generates complete products (ebooks, courses, tools, etc)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Package, Play, RefreshCw } from 'lucide-react';
 
 const ProductFactoryModule = () => {
   const [generatingProduct, setGeneratingProduct] = useState(false);
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      name: 'AI Copywriting Masterclass',
-      type: 'Course',
-      status: 'Published',
-      progress: 100,
-      files: 12,
-      size: '2.4 GB'
-    },
-    {
-      id: 2,
-      name: 'Email Template Pack',
-      type: 'Templates',
-      status: 'Generating',
-      progress: 65,
-      files: 24,
-      size: '450 MB'
-    }
-  ]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
   const productTypes = [
     { name: 'Ebook', icon: '📚', description: 'AI-written, SEO-optimized ebook' },
@@ -40,11 +23,22 @@ const ProductFactoryModule = () => {
     { name: 'Lead Magnet', icon: '🪝', description: 'Free lead generation asset' }
   ];
 
-  const generateProduct = async (type) => {
-    setGeneratingProduct(true);
-    // Simulate generation
-    setTimeout(() => setGeneratingProduct(false), 3000);
-  };
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const response = await fetch(`${API}/api/products?limit=10`);
+        if (response.ok) {
+          const data = await response.json();
+          setProducts(data.slice(0, 2) || []);
+        }
+      } catch (error) {
+        console.error('Failed to load products:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadProducts();
+  }, [API]);
 
   return (
     <div className="space-y-6">

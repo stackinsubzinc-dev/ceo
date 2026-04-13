@@ -3,51 +3,38 @@
  * Scans for trending niches and market opportunities
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, Search, Zap } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const OpportunityScannerModule = () => {
-  const [opportunities, setOpportunities] = useState([
-    {
-      id: 1,
-      niche: 'AI Writing Tools for Copywriters',
-      demandScore: 92.5,
-      trendScore: 88,
-      competition: 'Medium',
-      marketSize: '$2.5M+',
-      painPoints: ['Lack of automation', 'High learning curve'],
-      recommendedPrice: '$27-$97'
-    },
-    {
-      id: 2,
-      niche: 'Personal Finance for Gen Z',
-      demandScore: 88,
-      trendScore: 95,
-      competition: 'Low',
-      marketSize: '$5M+',
-      painPoints: ['No beginner-friendly guides', 'Complex strategies'],
-      recommendedPrice: '$37-$127'
-    },
-    {
-      id: 3,
-      niche: 'Remote Work Productivity',
-      demandScore: 85,
-      trendScore: 82,
-      competition: 'Medium',
-      marketSize: '$3M+',
-      painPoints: ['Time management', 'Isolation'],
-      recommendedPrice: '$17-$79'
-    }
-  ]);
-
+  const [opportunities, setOpportunities] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const loadOpportunities = async () => {
+      try {
+        const response = await fetch(`${API}/api/opportunities?limit=3`);
+        if (response.ok) {
+          const data = await response.json();
+          setOpportunities(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Failed to load opportunities:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadOpportunities();
+  }, [API]);
 
   const startScan = async () => {
     setScanning(true);
-    // Simulate API call
+    // In production, call the backend scanner endpoint
     setTimeout(() => setScanning(false), 2000);
   };
 

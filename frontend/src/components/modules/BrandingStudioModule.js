@@ -3,7 +3,7 @@
  * Generates logos, covers, thumbnails, brand guidelines
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Palette, RefreshCw } from 'lucide-react';
@@ -16,17 +16,38 @@ const BrandingStudioModule = () => {
       secondary: '#EC4899',
       accent: '#F97316'
     },
-    generated: 12
+    generated: 0
   });
 
-  const brandingAssets = [
-    { name: 'Logo', icon: '📿', count: 5 },
-    { name: 'Covers', icon: '📕', count: 4 },
-    { name: 'Thumbnails', icon: '🖼️', count: 7 },
-    { name: 'Ad Creatives', icon: '📢', count: 12 },
-    { name: 'Social Templates', icon: '📱', count: 8 },
-    { name: 'Email Headers', icon: '✉️', count: 3 }
-  ];
+  const [brandingAssets, setBrandingAssets] = useState([
+    { name: 'Logo', icon: '📿', count: 0 },
+    { name: 'Covers', icon: '📕', count: 0 },
+    { name: 'Thumbnails', icon: '🖼️', count: 0 },
+    { name: 'Ad Creatives', icon: '📢', count: 0 },
+    { name: 'Social Templates', icon: '📱', count: 0 },
+    { name: 'Email Headers', icon: '✉️', count: 0 }
+  ]);
+
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const loadBrandingData = async () => {
+      try {
+        // Load branding data from backend
+        const response = await fetch(`${API}/api/branding`);
+        if (response.ok) {
+          const data = await response.json();
+          setBranding(data || branding);
+        }
+      } catch (error) {
+        console.error('Failed to load branding data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadBrandingData();
+  }, [API, branding]);
 
   return (
     <div className="space-y-6">

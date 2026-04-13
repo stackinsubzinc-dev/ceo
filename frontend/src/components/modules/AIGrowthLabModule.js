@@ -3,41 +3,15 @@
  * Run A/B tests, experiments, and growth optimization
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Lightbulb, Plus, TrendingUp } from 'lucide-react';
 
 const AIGrowthLabModule = () => {
-  const [experiments, setExperiments] = useState([
-    {
-      id: 1,
-      type: 'Price Test',
-      variants: ['$19', '$27', '$37', '$47'],
-      winner: '$27',
-      uplift: '24%',
-      status: 'completed',
-      duration: '7 days'
-    },
-    {
-      id: 2,
-      type: 'Landing Page Copy',
-      variants: ['Version A', 'Version B', 'Version C'],
-      winner: 'Version B',
-      uplift: '18%',
-      status: 'running',
-      duration: '5 days remaining'
-    },
-    {
-      id: 3,
-      type: 'Ad Creative',
-      variants: ['Design 1', 'Design 2'],
-      winner: null,
-      uplift: null,
-      status: 'paused',
-      duration: '3 days'
-    }
-  ]);
+  const [experiments, setExperiments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
   const growthStrategies = [
     { icon: '📋', name: 'Duplicate Winners', desc: 'Clone high-performing products' },
@@ -47,6 +21,21 @@ const AIGrowthLabModule = () => {
     { icon: '💎', name: 'Premium Tier', desc: 'Create higher-ticket offers' },
     { icon: '🎁', name: 'Affiliate Program', desc: 'Launch commission-based sales' }
   ];
+
+  useEffect(() => {
+    const loadExperiments = async () => {
+      try {
+        // In production, call a real experiments endpoint
+        // For now, experiments can be empty until the backend endpoint is available
+        setExperiments([]);
+      } catch (error) {
+        console.error('Failed to load experiments:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadExperiments();
+  }, []);
 
   return (
     <div className="space-y-6">

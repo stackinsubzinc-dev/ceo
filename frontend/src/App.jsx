@@ -21,6 +21,7 @@ import VaultPage from './pages/VaultPage';
 import AssistantPage from './pages/AssistantPage';
 import HunterPage from './pages/HunterPage';
 import ProjectsPage from './pages/ProjectsPage';
+import FactoryDashboard from './components/FactoryDashboard';
 import './App.css';
 
 function AppRoutes() {
@@ -60,6 +61,7 @@ function AppRoutes() {
         <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/hunter" element={<HunterPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/factory" element={<FactoryDashboard />} />
         <Route path="/:page" element={<LegalPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

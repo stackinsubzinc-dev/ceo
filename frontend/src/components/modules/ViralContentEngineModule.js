@@ -3,27 +3,48 @@
  * Generates 100+ content pieces for marketing
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendingUp } from 'lucide-react';
 
 const ViralContentEngineModule = () => {
   const [contentStats, setContentStats] = useState({
-    totalGenerated: 145,
-    scheduled: 89,
-    posted: 56,
-    engagement: '8.2K'
+    totalGenerated: 0,
+    scheduled: 0,
+    posted: 0,
+    engagement: '0'
   });
 
-  const platforms = [
-    { name: 'TikTok', icon: '🎵', pieces: 45, format: '60-sec videos' },
-    { name: 'Instagram', icon: '📷', pieces: 36, format: 'Reels & Posts' },
-    { name: 'Twitter', icon: '𝕏', pieces: 28, format: 'Threads' },
-    { name: 'YouTube', icon: '▶️', pieces: 18, format: 'Shorts' },
-    { name: 'Blog', icon: '📝', pieces: 12, format: 'SEO Posts' },
-    { name: 'Email', icon: '✉️', pieces: 6, format: 'Sequences' }
-  ];
+  const [platforms, setPlatforms] = useState([
+    { name: 'TikTok', icon: '🎵', pieces: 0, format: '60-sec videos' },
+    { name: 'Instagram', icon: '📷', pieces: 0, format: 'Reels & Posts' },
+    { name: 'Twitter', icon: '𝕏', pieces: 0, format: 'Threads' },
+    { name: 'YouTube', icon: '▶️', pieces: 0, format: 'Shorts' },
+    { name: 'Blog', icon: '📝', pieces: 0, format: 'SEO Posts' },
+    { name: 'Email', icon: '✉️', pieces: 0, format: 'Sequences' }
+  ]);
+
+  const [loading, setLoading] = useState(true);
+  const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const loadContentStats = async () => {
+      try {
+        // Load content stats from backend
+        const response = await fetch(`${API}/api/content/stats`);
+        if (response.ok) {
+          const data = await response.json();
+          setContentStats(data || contentStats);
+        }
+      } catch (error) {
+        console.error('Failed to load content stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadContentStats();
+  }, [API, contentStats]);
 
   return (
     <div className="space-y-6">
