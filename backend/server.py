@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -196,20 +196,6 @@ automation_scheduler = None
 
 # Create the main app without a prefix
 app = FastAPI()
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://frontend-one-ashen-16.vercel.app",
-        "https://*.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -467,7 +453,7 @@ async def login(login_data: LoginRequest):
 
 
 @api_router.get("/auth/me", response_model=UserResponse)
-async def get_current_user(authorization: str = None):
+async def get_current_user(authorization: Optional[str] = Header(None)):
     """Get current authenticated user - reads from Authorization header"""
     try:
         if not authorization:
@@ -482,6 +468,8 @@ async def get_current_user(authorization: str = None):
         
         # Decode token
         payload = decode_token(token)
+        if payload is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
         user_id = payload.get("sub")
         
         if db is None:
@@ -4257,7 +4245,7 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    if client:
+    if client is not None:
         client.close()
 
 # Start the server

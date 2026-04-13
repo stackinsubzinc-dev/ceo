@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import './Layout.css';
 import {
   Menu,
@@ -19,6 +20,7 @@ import {
 const Layout = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { user, logout } = useAuth();
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: BarChart3 },
@@ -88,10 +90,12 @@ const Layout = ({ children }) => {
             </button>
           </div>
           <div className="top-bar-right">
+            <div className="user-badge">{user?.email || 'Signed in'}</div>
             <div className="status-badge">
               <span className="status-dot"></span>
               Active
             </div>
+            <button className="logout-button" onClick={logout}>Logout</button>
           </div>
         </header>
 

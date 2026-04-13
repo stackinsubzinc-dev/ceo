@@ -5,10 +5,12 @@
 .layout {
   display: flex;
   min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(135deg, #0a0e27 0%, #151b3a 50%, #0a0e27 100%);
   background-attachment: fixed;
   color: var(--color-text-primary);
   position: relative;
+  overflow: hidden;
 }
 
 /* ============================================================================
@@ -160,6 +162,9 @@
   margin-left: 260px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
   transition: margin-left 0.3s ease;
 }
 
@@ -213,6 +218,19 @@
   gap: 16px;
 }
 
+.user-badge {
+  max-width: 260px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 999px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .status-badge {
   padding: 8px 12px;
   background-color: var(--color-bg-tertiary);
@@ -237,6 +255,21 @@
   animation: pulse 2s ease-in-out infinite;
 }
 
+.logout-button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 0, 255, 0.35);
+  background: rgba(255, 0, 255, 0.08);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-button:hover {
+  background: rgba(255, 0, 255, 0.18);
+  box-shadow: 0 0 12px rgba(255, 0, 255, 0.22);
+}
+
 @keyframes pulse {
   0%, 100% {
     opacity: 1;
@@ -252,8 +285,11 @@
 
 .page-container {
   flex: 1;
+  min-height: 0;
   padding: 32px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ============================================================================
