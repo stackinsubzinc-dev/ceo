@@ -9,6 +9,7 @@ import LegalPage from './pages/LegalPage';
 import Dashboard from './pages/Dashboard';
 import OpportunitiesPage from './pages/OpportunitiesPage';
 import ProductsPage from './pages/ProductsPage';
+import FiilthyPage from './pages/FiilthyPage';
 import BrandingPage from './pages/BrandingPage';
 import ContentPage from './pages/ContentPage';
 import SalesPage from './pages/SalesPage';
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/opportunities" element={<OpportunitiesPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/fiilthy" element={<FiilthyPage />} />
         <Route path="/branding" element={<BrandingPage />} />
         <Route path="/content" element={<ContentPage />} />
         <Route path="/sales" element={<SalesPage />} />

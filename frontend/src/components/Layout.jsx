@@ -18,7 +18,8 @@ import {
   Shield,
   Bot,
   Radar,
-  FolderOpen
+  FolderOpen,
+  ShoppingCart
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
@@ -51,6 +52,7 @@ const Layout = ({ children }) => {
     { name: 'Dashboard', href: '/', icon: BarChart3 },
     { name: 'Opportunities', href: '/opportunities', icon: Search },
     { name: 'Products', href: '/products', icon: Package },
+    { name: '🛒 Fiilthy Store', href: '/fiilthy', icon: ShoppingCart },
     { name: 'Branding', href: '/branding', icon: Palette },
     { name: 'Content', href: '/content', icon: TrendingUp },
     { name: 'Sales', href: '/sales', icon: Zap },

@@ -3839,6 +3839,152 @@ async def get_app_description():
     }
 
 
+# ==================== FIILTHY DIGITAL STOREFRONT ====================
+
+class DigitalProduct(BaseModel):
+    id: str
+    title: str
+    description: str
+    fullDescription: Optional[str] = None
+    price: float
+    originalPrice: Optional[float] = None
+    type: str  # template, course, guide, tool
+    cover: str
+    rating: float = 4.8
+    reviews: int = 0
+    downloads: int = 0
+    includes: List[str] = []
+    tags: List[str] = []
+    fileSize: str = "0 MB"
+    updated: str
+    downloadUrl: Optional[str] = None
+
+class Purchase(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    product_id: str
+    user_id: str
+    user_email: str
+    amount: float
+    status: str = "completed"  # completed, pending, refunded
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    download_expires_at: Optional[datetime] = None
+
+@app.get("/api/fiilthy/products", response_model=List[DigitalProduct])
+async def get_fiilthy_products():
+    """Get all Fiilthy digital products"""
+    try:
+        products = [
+            {
+                "id": "6a472559-3ab9-4fd4-afec-9a4ed3316cb6",
+                "title": "AI-Powered Content Strategy Mastery",
+                "description": "Freelance marketers struggling to create consistent, high-quality content—meet your new best friend.",
+                "fullDescription": "Transform your content creation process with AI-driven insights that save time and increase engagement. Discover proven strategies and tools that streamline your workflow, enabling you to produce compelling content that resonates with your audience and boosts your bottom line.",
+                "price": 149,
+                "originalPrice": 299,
+                "type": "template",
+                "cover": "https://oaidalleapiprodscus.blob.core.windows.net/private/org-QbPOFuIwfINU4APXuftAIXAv/user-sDce6KMPZefHEaRP6CvLW3FO/img-gs0FHst9jCVhM9LlwpeNHBDJ.png",
+                "rating": 4.8,
+                "reviews": 24,
+                "downloads": 1200,
+                "includes": [
+                    "Step-by-step guides",
+                    "AI content calendars",
+                    "Actionable checklists",
+                    "Automation tools",
+                    "Email templates",
+                    "Video training"
+                ],
+                "tags": ["AI", "Content", "Marketing", "Templates"],
+                "fileSize": "245 MB",
+                "updated": "2026-04-12"
+            }
+        ]
+        return products
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/fiilthy/purchase")
+async def create_purchase(purchase_data: dict, _auth: dict = Depends(require_auth)):
+    """Create a purchase for a digital product"""
+    try:
+        purchase = Purchase(
+            product_id=purchase_data.get("product_id"),
+            user_id=_auth.get("user_id"),
+            user_email=_auth.get("email"),
+            amount=purchase_data.get("amount"),
+            download_expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+        )
+        
+        if db:
+            doc = purchase.model_dump()
+            doc['created_at'] = doc['created_at'].isoformat()
+            if doc.get('download_expires_at'):
+                doc['download_expires_at'] = doc['download_expires_at'].isoformat()
+            await db.purchases.insert_one(doc)
+        
+        return {
+            "status": "success",
+            "purchase_id": purchase.id,
+            "message": "Purchase completed successfully",
+            "download_expires_at": purchase.download_expires_at.isoformat() if purchase.download_expires_at else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fiilthy/purchases")
+async def get_user_purchases(_auth: dict = Depends(require_auth)):
+    """Get user's digital product purchases"""
+    try:
+        if not db:
+            return []
+        
+        purchases = await db.purchases.find(
+            {"user_id": _auth.get("user_id")},
+            {"_id": 0}
+        ).to_list(100)
+        
+        return purchases
+    except Exception as e:
+        if is_database_query_error(e):
+            return []
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fiilthy/download/{product_id}")
+async def get_download_link(product_id: str, _auth: dict = Depends(require_auth)):
+    """Get download link for purchased product"""
+    try:
+        if not db:
+            raise HTTPException(status_code=500, detail="Database not available")
+        
+        # Check if user has purchased this product
+        purchase = await db.purchases.find_one({
+            "product_id": product_id,
+            "user_id": _auth.get("user_id"),
+            "status": "completed"
+        })
+        
+        if not purchase:
+            raise HTTPException(status_code=403, detail="You haven't purchased this product")
+        
+        # Check if download link has expired
+        if purchase.get('download_expires_at'):
+            expires = datetime.fromisoformat(purchase['download_expires_at'])
+            if datetime.now(timezone.utc) > expires:
+                raise HTTPException(status_code=410, detail="Download link has expired")
+        
+        # Return mock download URL (replace with real file storage)
+        return {
+            "status": "success",
+            "download_url": f"/api/fiilthy/files/{product_id}/{_auth.get('user_id')}",
+            "filename": f"fiilthy-product-{product_id}.zip",
+            "expires_in_hours": 24
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Health check endpoint
 @app.get("/health")
 async def health():
