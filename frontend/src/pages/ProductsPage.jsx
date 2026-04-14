@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, Clock, TrendingUp, Zap, Image, Loader, Check, X, Share2, FolderOpen, ExternalLink } from 'lucide-react';
+import { Package, Clock, TrendingUp, Zap, Image, Loader, Check, X, Share2, FolderOpen, ExternalLink, Rocket, Mail, FileText } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
+import ProductsDashboard from '../components/ProductsDashboard';
 import './Pages.css';
 
 const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
@@ -62,6 +63,7 @@ const ProductsPage = () => {
   const [checkoutModal, setCheckoutModal] = useState(null);
   const [checkoutEmail, setCheckoutEmail] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('generate'); // 'generate' or 'manage'
 
   // Load products from backend on mount
   useEffect(() => {
@@ -175,7 +177,52 @@ const ProductsPage = () => {
         <p>AI-powered product generation and management</p>
       </div>
 
-      <WorkflowGuide page="products" hasProducts={products.length > 0} />
+      {/* Tabs */}
+      <div style={{
+        display: 'flex',
+        gap: '4px',
+        marginBottom: '24px',
+        borderBottom: '1px solid #e0e0e0',
+        paddingBottom: '0'
+      }}>
+        <button
+          onClick={() => setActiveTab('generate')}
+          style={{
+            padding: '12px 20px',
+            backgroundColor: activeTab === 'generate' ? '#007bff' : 'transparent',
+            color: activeTab === 'generate' ? 'white' : '#666',
+            border: 'none',
+            borderBottom: activeTab === 'generate' ? '3px solid #007bff' : '1px solid transparent',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '14px',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          ⚡ Generate Products
+        </button>
+        <button
+          onClick={() => setActiveTab('manage')}
+          style={{
+            padding: '12px 20px',
+            backgroundColor: activeTab === 'manage' ? '#007bff' : 'transparent',
+            color: activeTab === 'manage' ? 'white' : '#666',
+            border: 'none',
+            borderBottom: activeTab === 'manage' ? '3px solid #007bff' : '1px solid transparent',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '14px',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          📦 View & Manage ({products.length})
+        </button>
+      </div>
+
+      {/* Content based on active tab */}
+      {activeTab === 'generate' ? (
+        <>
+          <WorkflowGuide page="products" hasProducts={products.length > 0} />
 
       {/* AI Product Generator Section */}
       <div className="content-section" style={{ backgroundColor: '#f8f9ff', border: '2px solid #007bff' }}>
@@ -484,6 +531,10 @@ const ProductsPage = () => {
           </div>
         )}
       </div>
+        </>
+      ) : (
+        <ProductsDashboard />
+      )}
 
       {/* Checkout Modal */}
       {checkoutModal && (

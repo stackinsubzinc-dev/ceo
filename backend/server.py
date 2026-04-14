@@ -1007,6 +1007,124 @@ async def update_product_status(product_id: str, status: ProductStatus):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Product Marketing & Content Generation
+@api_router.post("/products/{product_id}/generate-marketing")
+async def generate_marketing_content(product_id: str):
+    """Generate video scripts, hooks, and captions for a product"""
+    try:
+        # Fetch product from database
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        openai_key = await keys_manager.get_key('openai_key')
+        if not openai_key:
+            raise HTTPException(status_code=400, detail="OpenAI key not configured")
+        
+        client = openai.OpenAI(api_key=openai_key)
+        
+        # Generate marketing assets
+        prompt = f"""
+        For this digital product: "{product['title']}"
+        Description: {product['description']}
+        
+        Generate engaging marketing content:
+        1. Three 15-second video scripts (for TikTok, Instagram Reels, YouTube Shorts)
+        2. Five attention-grabbing hooks
+        3. Three social media captions (Instagram, Twitter, LinkedIn)
+        4. Two strong call-to-action statements
+        
+        Format as JSON with keys: video_scripts, hooks, captions, ctas
+        Make it compelling and conversion-focused.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        import json
+        try:
+            content = json.loads(response.choices[0].message.content)
+        except:
+            content = {
+                "video_scripts": [],
+                "hooks": [],
+                "captions": [],
+                "ctas": []
+            }
+        
+        return {
+            "product_id": product_id,
+            "product_title": product['title'],
+            "videoScripts": content.get("video_scripts", []),
+            "hooks": content.get("hooks", []),
+            "captions": content.get("captions", []),
+            "ctas": content.get("ctas", []),
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate marketing content: {str(e)}")
+
+
+@api_router.post("/products/{product_id}/generate-email")
+async def generate_email_campaign(product_id: str):
+    """Generate email campaign sequence for a product"""
+    try:
+        # Fetch product from database
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        openai_key = await keys_manager.get_key('openai_key')
+        if not openai_key:
+            raise HTTPException(status_code=400, detail="OpenAI key not configured")
+        
+        client = openai.OpenAI(api_key=openai_key)
+        
+        # Generate email campaign
+        prompt = f"""
+        For this digital product: "{product['title']}"
+        Description: {product['description']}
+        
+        Create a 5-email sales sequence:
+        Email 1: Problem Awareness (subject line + body)
+        Email 2: Deeper Pain (subject line + body)
+        Email 3: Solution Introduction (subject line + body)
+        Email 4: Social Proof (subject line + body, with testimonial if applicable)
+        Email 5: Final CTA & Urgency (subject line + body)
+        
+        Format as JSON with keys: emails (array of objects with subject, body, day_to_send)
+        Make it persuasive and conversion-focused.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        import json
+        try:
+            content = json.loads(response.choices[0].message.content)
+        except:
+            content = {"emails": []}
+        
+        return {
+            "product_id": product_id,
+            "product_title": product['title'],
+            "emailSequence": content.get("emails", []),
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate email campaign: {str(e)}")
+
+
 # Opportunities CRUD
 @api_router.post("/opportunities", response_model=Opportunity)
 async def create_opportunity(opportunity_input: OpportunityCreate):

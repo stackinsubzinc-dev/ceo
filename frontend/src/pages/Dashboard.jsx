@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { TrendingUp, BarChart3, Zap, AlertCircle, RefreshCw } from 'lucide-react';
+import { TrendingUp, BarChart3, Zap, AlertCircle, RefreshCw, Package } from 'lucide-react';
 import './Pages.css';
 
 const API = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
@@ -182,9 +182,14 @@ const Dashboard = () => {
               {loading ? 'Connecting...' : 'Retry Sync'}
             </button>
           ) : (
-            <Link className="btn btn-primary" to="/analytics">
-              {loading ? 'Connecting...' : 'Open Analytics'}
-            </Link>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <Link className="btn btn-primary" to="/analytics">
+                {loading ? 'Connecting...' : 'Open Analytics'}
+              </Link>
+              <Link className="btn btn-primary" to="/products" style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}>
+                📦 View Products
+              </Link>
+            </div>
           )}
         </div>
       </div>
